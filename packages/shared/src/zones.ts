@@ -5,6 +5,7 @@ export const ZONE_IDS = [
   "zone-park",
   "zone-beach",
   "zone-event",
+  "zone-market",
 ] as const;
 
 export type ZoneId = (typeof ZONE_IDS)[number];
@@ -22,6 +23,7 @@ export const ZONES: Record<ZoneId, ZoneInfo> = {
   "zone-park": { id: "zone-park", name: "City Park", description: "Social activities" },
   "zone-beach": { id: "zone-beach", name: "Waterfront", description: "Relaxation and events" },
   "zone-event": { id: "zone-event", name: "Event Center", description: "Live events" },
+  "zone-market": { id: "zone-market", name: "AI Agent Street", description: "Shops staffed by AI agent NPCs" },
 };
 
 export const DEFAULT_ZONE: ZoneId = "zone-central";

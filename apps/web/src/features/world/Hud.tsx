@@ -109,7 +109,7 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
 
       {ui.nearby && !panel && (
         <button className={styles.prompt} onClick={() => engine.interact()}>
-          <kbd>E</kbd> {promptVerb(ui.nearby.kind)} {ui.nearby.label}
+          <kbd>E</kbd> {promptText(engine, ui.nearby)}
         </button>
       )}
       {ui.seated && !panel && (
@@ -163,7 +163,15 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
   );
 }
 
-function promptVerb(kind: InteractiveKind): string {
+function promptText(engine: GameEngine, nearby: { kind: InteractiveKind; label: string; ref?: string | undefined }): string {
+  if (nearby.kind === "shopkeeper") {
+    const keeper = [...engine.npcs.values()].find((n) => n.shopSlug === nearby.ref);
+    return keeper ? `Talk to ${keeper.name}` : `Visit ${nearby.label}`;
+  }
+  return `${promptVerb(nearby.kind)} ${nearby.label}`;
+}
+
+function promptVerb(kind: Exclude<InteractiveKind, "shopkeeper">): string {
   switch (kind) {
     case "seat":
       return "Sit on";

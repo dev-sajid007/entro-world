@@ -62,7 +62,7 @@ export interface Prop {
   color?: string | undefined;
 }
 
-export type InteractiveKind = "seat" | "board" | "kiosk" | "fountain" | "screen" | "plotSign";
+export type InteractiveKind = "seat" | "board" | "kiosk" | "fountain" | "screen" | "plotSign" | "shopkeeper";
 
 export interface InteractiveObject {
   id: string;
@@ -135,6 +135,33 @@ export interface Venue {
   z: number;
 }
 
+/**
+ * A shop on AI Agent Street. `slug` matches `market_shops.slug` in the database, where the shop's
+ * AI agent lives. Open shops have a walk-in interior with a counter and a shopkeeper NPC; the
+ * others are closed storefronts (ordinary buildings) until their agent launches.
+ */
+export interface MarketShop {
+  slug: string;
+  name: string;
+  zoneId: ZoneId;
+  chunk: string;
+  /** Center of the footprint. The open front faces local -Z rotated by `rotation`. */
+  x: number;
+  z: number;
+  rotation: number;
+  /** Along the storefront. */
+  width: number;
+  /** From the front to the back wall. */
+  depth: number;
+  height: number;
+  color: string;
+  open: boolean;
+  /** Where the shopkeeper stands (behind the counter), facing the customers. */
+  keeper: { x: number; z: number; rotation: number };
+  /** Customers inside this circle are "at the counter": the shopkeeper greets and listens to them. */
+  trigger: { x: number; z: number; radius: number };
+}
+
 export interface Chunk {
   key: string;
   rect: Rect;
@@ -164,6 +191,7 @@ export interface CityLayout {
   interactives: InteractiveObject[];
   plots: Plot[];
   venues: Venue[];
+  shops: MarketShop[];
   water: WaterBody[];
   colliders: Collider[];
 }

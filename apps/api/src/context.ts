@@ -1,6 +1,7 @@
 import type { Redis } from "ioredis";
 import type { ApiEnv } from "@entroworld/config";
 import type { Database } from "@entroworld/database";
+import type { AiServiceClient } from "./lib/ai-service";
 import type { Mailer } from "./lib/mailer";
 import type { PresenceReader } from "./lib/presence";
 import type { AccessClaims, AccessTokens, GameTickets } from "./lib/tokens";
@@ -17,6 +18,7 @@ export interface AppContext extends AppDeps {
   accessTokens: AccessTokens;
   gameTickets: GameTickets;
   presence: PresenceReader;
+  ai: AiServiceClient;
 }
 
 declare module "fastify" {

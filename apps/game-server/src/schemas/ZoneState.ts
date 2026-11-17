@@ -42,6 +42,26 @@ export const ObjectState = schema(
 );
 export type ObjectState = SchemaType<typeof ObjectState>;
 
+/** An AI shopkeeper standing in its shop. Field names mirror `NpcStateShape`. */
+export const NpcState = schema(
+  {
+    id: t.string(),
+    shopSlug: t.string(),
+    agentId: t.string(),
+    name: t.string(),
+    x: t.float32(),
+    y: t.float32(),
+    z: t.float32(),
+    rot: t.float32(),
+    /** One of NPC_STATES: idle, listening, thinking, talking. */
+    anim: t.string(),
+    /** JSON-encoded AvatarConfig. */
+    avatar: t.string(),
+  },
+  "NpcState",
+);
+export type NpcState = SchemaType<typeof NpcState>;
+
 export const ZoneState = schema(
   {
     zoneId: t.string(),
@@ -51,6 +71,8 @@ export const ZoneState = schema(
      */
     players: t.map(PlayerState).view(),
     objects: t.map(ObjectState),
+    /** A handful per zone at most, so everyone in the room receives all of them. */
+    npcs: t.map(NpcState),
   },
   "ZoneState",
 );

@@ -3,7 +3,18 @@ import { DEFAULT_ZONE, NETWORK, type AvatarConfig, type WorldJoinResponse, type 
 import { EMOTES, type EmoteId } from "@entroworld/avatar";
 import { PhysicsWorld, SIM } from "@entroworld/game-engine";
 import { CloseReason, isFinalCloseCode } from "@entroworld/game-protocol";
-import type { ChatBroadcast, ChatChannel, InputFrame, ObjectStateShape, PlayerStateShape, VoicePeer, VoiceTokenPayload, ZoneTransferPayload } from "@entroworld/game-protocol";
+import type {
+  ChatBroadcast,
+  ChatChannel,
+  InputFrame,
+  NpcStateShape,
+  ObjectStateShape,
+  PlayerStateShape,
+  ShopPresencePayload,
+  VoicePeer,
+  VoiceTokenPayload,
+  ZoneTransferPayload,
+} from "@entroworld/game-protocol";
 import {
   findNearestInteractive,
   getCityLayout,
@@ -18,6 +29,7 @@ import { CameraController } from "../camera/CameraController";
 import { InputManager, type InputAction } from "../controls/InputManager";
 import { LocalPlayer } from "../entities/LocalPlayer";
 import { RemotePlayer } from "../entities/RemotePlayer";
+import { Shopkeeper } from "../entities/Shopkeeper";
 import { animateMaterials } from "../assets/materials";
 import { ZoneConnection, type ConnectionStatus } from "../../multiplayer/ZoneConnection";
 import { Emitter } from "./Emitter";
@@ -46,6 +58,8 @@ export interface GameUiState {
   z: number;
   voiceAvailable: boolean;
   error: string | null;
+  /** The AI shop counter the player is standing at (from the game server), if any. */
+  shop: ShopPresencePayload | null;
 }
 
 export interface ChatEntry extends ChatBroadcast {
@@ -64,6 +78,8 @@ export interface EngineEvents extends Record<string, unknown> {
   eventUpdate: { eventId: string };
   system: string;
   zoneChanged: ZoneId;
+  shopEnter: ShopPresencePayload;
+  shopLeave: ShopPresencePayload;
 }
 
 export interface OnlineOptions {
@@ -107,6 +123,8 @@ export class GameEngine {
   /** World position the camera focuses on (read by lights and other scene components). */
   readonly focus = new THREE.Vector3();
   readonly remotes = new Map<string, RemotePlayer>();
+  /** AI shopkeepers in the current zone, by NPC id. */
+  readonly npcs = new Map<string, Shopkeeper>();
   readonly local: LocalPlayer;
   camera: CameraController | null = null;
   private cameraObject: THREE.PerspectiveCamera | null = null;
@@ -147,6 +165,7 @@ export class GameEngine {
       z: spawn.z,
       voiceAvailable: false,
       error: null,
+      shop: null,
     });
     this.focus.set(spawn.x, spawn.y, spawn.z);
     this.unsubscribers.push(this.input.on("action", (a) => this.onAction(a)));
@@ -202,6 +221,7 @@ export class GameEngine {
     for (const u of this.unsubscribers) u();
     for (const r of this.remotes.values()) r.dispose();
     this.remotes.clear();
+    this.clearNpcs();
     const connection = this.connection;
     this.connection = null;
     if (connection) await connection.leave();
@@ -246,6 +266,19 @@ export class GameEngine {
     connection.on("objectChange", ({ id, object }) => {
       this.objects.set(id, { id: object.id, kind: object.kind, occupant: object.occupant, active: object.active, value: object.value });
       this.objectsVersion.set({ version: this.objectsVersion.get().version + 1 });
+    });
+    connection.on("npcChange", ({ id, npc }) => this.onNpcState(id, npc));
+    connection.on("npcRemove", ({ id }) => {
+      this.npcs.get(id)?.dispose();
+      this.npcs.delete(id);
+    });
+    connection.on("shopEnter", (shop) => {
+      this.ui.set({ shop });
+      this.events.emit("shopEnter", shop);
+    });
+    connection.on("shopLeave", (shop) => {
+      if (this.ui.get().shop?.shopSlug === shop.shopSlug) this.ui.set({ shop: null });
+      this.events.emit("shopLeave", shop);
     });
     connection.on("chat", (m) => this.addChat(m));
     connection.on("chatHistory", (list) => {
@@ -299,6 +332,29 @@ export class GameEngine {
     remote.push({ t: performance.now(), x: p.x, y: p.y, z: p.z, rot: p.rot }, NETWORK.patchRateMs);
   }
 
+  private onNpcState(id: string, n: NpcStateShape): void {
+    const existing = this.npcs.get(id);
+    if (existing) {
+      existing.apply(n);
+      return;
+    }
+    const npc = new Shopkeeper(id, n.agentId, n.shopSlug, n.name, n);
+    this.npcs.set(id, npc);
+    this.root.add(npc.root);
+  }
+
+  private clearNpcs(): void {
+    for (const n of this.npcs.values()) n.dispose();
+    this.npcs.clear();
+    if (this.ui.get().shop) this.ui.set({ shop: null });
+  }
+
+  /** The shopkeeper NPC for an AI agent, if it stands in this zone. */
+  shopkeeper(agentId: string): Shopkeeper | undefined {
+    for (const n of this.npcs.values()) if (n.agentId === agentId) return n;
+    return undefined;
+  }
+
   private addChat(m: ChatBroadcast, showBubble = true): void {
     if (this.options.isBlocked?.(m.from.userId)) return;
     const self = m.from.sessionId === this.connection?.sessionId || m.from.userId === this.options.userId;
@@ -324,6 +380,7 @@ export class GameEngine {
     if (old) await old.leave();
     for (const r of this.remotes.values()) r.dispose();
     this.remotes.clear();
+    this.clearNpcs();
     this.objects.clear();
     this.objectsVersion.set({ version: this.objectsVersion.get().version + 1 });
     const s = this.local.character.state;
@@ -538,6 +595,7 @@ export class GameEngine {
 
     const renderTime = now - NETWORK.interpolationDelayMs;
     for (const r of this.remotes.values()) r.update(renderTime, dt, now, cameraPos);
+    for (const n of this.npcs.values()) n.update(dt, now, cameraPos);
 
     animateMaterials(this.elapsed);
 

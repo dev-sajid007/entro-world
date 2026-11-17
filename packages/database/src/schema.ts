@@ -2,14 +2,17 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   doublePrecision,
   index,
   integer,
   jsonb,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
@@ -45,8 +48,18 @@ export const FRIENDSHIP_STATUSES = ["pending", "accepted"] as const;
 export type FriendshipRowStatus = (typeof FRIENDSHIP_STATUSES)[number];
 export const REPORT_STATUSES = ["open", "reviewing", "resolved", "dismissed"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
-export const REPORT_TARGETS = ["user", "post", "comment"] as const;
+export const REPORT_TARGETS = ["user", "post", "comment", "agent_message"] as const;
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
+export const SHOP_STATUSES = ["draft", "in_review", "active", "suspended"] as const;
+export type ShopRowStatus = (typeof SHOP_STATUSES)[number];
+export const SHOP_OWNER_TYPES = ["platform", "partner"] as const;
+export type ShopOwnerType = (typeof SHOP_OWNER_TYPES)[number];
+export const PRODUCT_TYPES = ["chat", "tool", "subscription"] as const;
+export type ProductRowType = (typeof PRODUCT_TYPES)[number];
+export const AGENT_SENDER_TYPES = ["user", "agent", "system"] as const;
+export type AgentSenderRowType = (typeof AGENT_SENDER_TYPES)[number];
+export const MODERATION_STATUSES = ["ok", "flagged", "blocked"] as const;
+export type ModerationRowStatus = (typeof MODERATION_STATUSES)[number];
 export const EMAIL_TOKEN_PURPOSES = ["verify_email"] as const;
 export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSES)[number];
 
@@ -391,4 +404,223 @@ export const moderationReports = pgTable(
     check("moderation_reports_target_check", oneOf(t.targetType, REPORT_TARGETS)),
     check("moderation_reports_status_check", oneOf(t.status, REPORT_STATUSES)),
   ],
+);
+
+// -------------------------------------------------------------------------------------------------
+// AI Agent Marketplace (SPEC-ADDENDUM-01 §11)
+// -------------------------------------------------------------------------------------------------
+
+export interface AgentPersona {
+  personality: string;
+  greeting: string;
+  speakingStyle: string;
+  specialty: string;
+  /** Seed for the shopkeeper's generated avatar. */
+  avatarSeed: string;
+  /** Shown with every answer for agents in sensitive areas (wellness, career). */
+  disclaimer?: string;
+  /** In-character reply when the user's daily allowance is used up. */
+  quotaMessage?: string;
+}
+
+export interface AgentModelConfig {
+  provider?: "anthropic" | "mock";
+  /** Defaults to AI_DEFAULT_MODEL. */
+  model?: string;
+  maxTokens?: number;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+}
+
+export const marketShops = pgTable(
+  "market_shops",
+  {
+    id: pk(),
+    zoneId: varchar("zone_id", { length: 40 })
+      .$type<ZoneId>()
+      .notNull()
+      .references(() => worldZones.slug),
+    /** Matches the shop's building in the city layout. */
+    slug: varchar("slug", { length: 40 }).notNull().unique(),
+    name: varchar("name", { length: 80 }).notNull(),
+    description: text("description").notNull().default(""),
+    position: jsonb("position").$type<{ x: number; z: number; rotation: number }>().notNull(),
+    interiorConfig: jsonb("interior_config").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    ownerType: varchar("owner_type", { length: 16 }).$type<ShopOwnerType>().notNull().default("platform"),
+    ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 16 }).$type<ShopRowStatus>().notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("market_shops_zone_idx").on(t.zoneId),
+    check("market_shops_status_check", oneOf(t.status, SHOP_STATUSES)),
+    check("market_shops_owner_type_check", oneOf(t.ownerType, SHOP_OWNER_TYPES)),
+  ],
+);
+
+export const aiAgents = pgTable(
+  "ai_agents",
+  {
+    id: pk(),
+    shopId: uuid("shop_id")
+      .notNull()
+      .references(() => marketShops.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 80 }).notNull(),
+    persona: jsonb("persona").$type<AgentPersona>().notNull(),
+    /** Server-only: never returned to clients. */
+    systemPrompt: text("system_prompt").notNull(),
+    modelConfig: jsonb("model_config").$type<AgentModelConfig>().notNull().default(sql`'{}'::jsonb`),
+    voiceConfig: jsonb("voice_config").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** Agents have no tools in this phase (SPEC-ADDENDUM-01 §13.2). */
+    allowedTools: jsonb("allowed_tools").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    safetyProfile: varchar("safety_profile", { length: 32 }).notNull().default("standard"),
+    version: integer("version").notNull().default(1),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("ai_agents_shop_idx").on(t.shopId)],
+);
+
+export const aiProducts = pgTable(
+  "ai_products",
+  {
+    id: pk(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => aiAgents.id, { onDelete: "cascade" }),
+    /** Stable identifier for seeding (unique per agent). */
+    slug: varchar("slug", { length: 40 }).notNull(),
+    name: varchar("name", { length: 80 }).notNull(),
+    description: text("description").notNull().default(""),
+    productType: varchar("product_type", { length: 16 }).$type<ProductRowType>().notNull().default("chat"),
+    /** Free requests per user per day. */
+    freeQuota: integer("free_quota").notNull().default(0),
+    priceConfig: jsonb("price_config").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    isActive: boolean("is_active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("ai_products_agent_slug_idx").on(t.agentId, t.slug),
+    check("ai_products_type_check", oneOf(t.productType, PRODUCT_TYPES)),
+    check("ai_products_free_quota_check", sql`${t.freeQuota} >= 0`),
+  ],
+);
+
+export const agentConversations = pgTable(
+  "agent_conversations",
+  {
+    id: pk(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => aiAgents.id, { onDelete: "cascade" }),
+    /** The user who started the conversation. */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    isGroup: boolean("is_group").notNull().default(false),
+    memoryEnabled: boolean("memory_enabled").notNull().default(false),
+    createdAt: createdAt(),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("agent_conversations_user_idx").on(t.userId, t.lastMessageAt.desc()), index("agent_conversations_agent_idx").on(t.agentId)],
+);
+
+export const agentConversationMembers = pgTable(
+  "agent_conversation_members",
+  {
+    id: pk(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("agent_conversation_members_unique").on(t.conversationId, t.userId), index("agent_conversation_members_user_idx").on(t.userId)],
+);
+
+export const agentMessages = pgTable(
+  "agent_messages",
+  {
+    id: pk(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: "cascade" }),
+    senderType: varchar("sender_type", { length: 8 }).$type<AgentSenderRowType>().notNull(),
+    senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "set null" }),
+    content: text("content").notNull(),
+    tokenCount: integer("token_count").notNull().default(0),
+    moderationStatus: varchar("moderation_status", { length: 8 }).$type<ModerationRowStatus>().notNull().default("ok"),
+    /** Idempotency key of user messages. */
+    clientMessageId: uuid("client_message_id"),
+    /** For agent messages: the user message being answered. */
+    replyToId: uuid("reply_to_id").references((): AnyPgColumn => agentMessages.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("agent_messages_conversation_idx").on(t.conversationId, t.createdAt.desc()),
+    uniqueIndex("agent_messages_client_id_idx").on(t.conversationId, t.clientMessageId),
+    index("agent_messages_reply_idx").on(t.replyToId),
+    check("agent_messages_sender_check", oneOf(t.senderType, AGENT_SENDER_TYPES)),
+    check("agent_messages_moderation_check", oneOf(t.moderationStatus, MODERATION_STATUSES)),
+  ],
+);
+
+export const agentUserMemory = pgTable(
+  "agent_user_memory",
+  {
+    id: pk(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => aiAgents.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    memory: jsonb("memory").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("agent_user_memory_unique").on(t.agentId, t.userId)],
+);
+
+export const agentUsage = pgTable(
+  "agent_usage",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => aiAgents.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => aiProducts.id, { onDelete: "set null" }),
+    /** UTC day. */
+    periodStart: date("period_start").notNull(),
+    requests: integer("requests").notNull().default(0),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+  },
+  (t) => [
+    unique("agent_usage_period_unique").on(t.userId, t.agentId, t.productId, t.periodStart).nullsNotDistinct(),
+    index("agent_usage_agent_period_idx").on(t.agentId, t.periodStart),
+  ],
+);
+
+export const productReviews = pgTable(
+  "product_reviews",
+  {
+    id: pk(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => aiProducts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    rating: smallint("rating").notNull(),
+    content: text("content").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("product_reviews_unique").on(t.productId, t.userId), check("product_reviews_rating_check", sql`${t.rating} between 1 and 5`)],
 );

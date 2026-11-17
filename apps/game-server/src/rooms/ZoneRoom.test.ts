@@ -10,6 +10,7 @@ import {
   ClientMessage,
   CloseReason,
   GAME_TICKET_ISSUER,
+  NPC_CONTROL_CHANNEL,
   ServerMessage,
   USER_CONTROL_CHANNEL,
   ZONE_ROOM,
@@ -21,7 +22,7 @@ import {
   type ZoneTransferPayload,
 } from "@entroworld/game-protocol";
 import type { WorldJoinResponse, ZoneId } from "@entroworld/shared";
-import { getZoneLayout, interactivesInZone } from "@entroworld/world-assets";
+import { getCityLayout, getZoneLayout, interactivesInZone } from "@entroworld/world-assets";
 import { createGameServer } from "../app";
 import { devUserId } from "../http/routes";
 import { memoryStore } from "../store";
@@ -441,7 +442,14 @@ describe("persistence and presence", () => {
     const start = position(serverPlayer(room));
     await walk(room, Buttons.Forward, 0.5);
     await until(() => Math.hypot(serverPlayer(room).x - start.x, serverPlayer(room).z - start.z) > 1);
-    const last = position(serverPlayer(room));
+    // Buffered input can still be applied after the last send: wait until the player stands still.
+    let last = position(serverPlayer(room));
+    for (let settled = 0; settled < 3; ) {
+      await sleep(50);
+      const now = position(serverPlayer(room));
+      settled = now.x === last.x && now.z === last.z ? settled + 1 : 0;
+      last = now;
+    }
     await room.leave();
     await until(() => store.positions.has(user.sub));
     const saved = store.positions.get(user.sub)!;
@@ -499,5 +507,42 @@ describe("persistence and presence", () => {
     store.avatars.set(user.sub, { ...before, appearance: { ...before.appearance, bodyType } });
     await matchMaker.presence.publish(USER_CONTROL_CHANNEL, { type: "avatar_changed", userId: user.sub });
     await until(() => JSON.parse(state(room).players.get(room.sessionId)!.avatar).appearance.bodyType === bodyType);
+  });
+});
+
+describe("AI shopkeepers", () => {
+  const agentId = "2c4e6a8b-0d1f-4a3b-9c5d-7e9f1a3b5c7d";
+  const conversationId = "8a6c4e2b-0f1d-4b3a-8c5e-7d9f1b3a5c7e";
+
+  it("shows the shopkeeper, greets customers at the counter and animates from the AI service", async () => {
+    store.shops.set("code-corner", { agentId, shopSlug: "code-corner", name: "Byte", avatarSeed: "code-corner-byte" });
+    try {
+      const shop = getCityLayout().shops.find((s) => s.slug === "code-corner")!;
+      const ticket = await apiTicket("zone-market", { x: shop.trigger.x, y: 0, z: shop.trigger.z, rotation: Math.PI / 2 });
+      const room = await colyseus.sdk.joinOrCreate(ZONE_ROOM, { zoneId: "zone-market", ticket: ticket.ticket });
+      open.push(room);
+      const box = inbox(room);
+      await room.waitForInitialState();
+      const npc = () => state(room).npcs.get("npc:code-corner");
+      await until(() => npc() !== undefined);
+      expect(npc()).toMatchObject({ name: "Byte", agentId, shopSlug: "code-corner" });
+      await until(() => box.of(ServerMessage.ShopEnter).length === 1);
+      expect(box.of(ServerMessage.ShopEnter)[0]).toEqual({ shopSlug: "code-corner", agentId });
+      await until(() => npc()!.anim === "listening");
+
+      await matchMaker.presence.publish(NPC_CONTROL_CHANNEL, { type: "npc_state", agentId, conversationId, state: "thinking" });
+      await until(() => npc()!.anim === "thinking");
+      await matchMaker.presence.publish(NPC_CONTROL_CHANNEL, { type: "npc_state", agentId, conversationId, state: "talking" });
+      await until(() => npc()!.anim === "talking");
+      await matchMaker.presence.publish(NPC_CONTROL_CHANNEL, { type: "npc_state", agentId, conversationId, state: "idle" });
+      await until(() => npc()!.anim === "listening");
+    } finally {
+      store.shops.clear();
+    }
+  });
+
+  it("has no shopkeepers in other zones", async () => {
+    const { room } = await join("zone-central");
+    expect(state(room).npcs.size).toBe(0);
   });
 });

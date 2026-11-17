@@ -8,8 +8,10 @@ import {
   type ChatChannel,
   type ErrorPayload,
   type InputFrame,
+  type NpcStateShape,
   type ObjectStateShape,
   type PlayerStateShape,
+  type ShopPresencePayload,
   type SystemPayload,
   type VoicePeersPayload,
   type VoiceTokenPayload,
@@ -27,6 +29,10 @@ export interface ZoneEvents extends Record<string, unknown> {
   playerChange: { sessionId: string; player: PlayerStateShape };
   playerRemove: { sessionId: string };
   objectChange: { id: string; object: ObjectStateShape };
+  npcChange: { id: string; npc: NpcStateShape };
+  npcRemove: { id: string };
+  shopEnter: ShopPresencePayload;
+  shopLeave: ShopPresencePayload;
   welcome: WelcomePayload;
   chat: ChatBroadcast;
   chatHistory: ChatBroadcast[];
@@ -88,6 +94,11 @@ export class ZoneConnection extends Emitter<ZoneEvents> {
       this.emit("objectChange", { id, object });
       cb.onChange(object as unknown as object, () => this.emit("objectChange", { id, object }));
     });
+    cb.onAdd("npcs", (npc: NpcStateShape, id: string) => {
+      this.emit("npcChange", { id, npc });
+      cb.onChange(npc as unknown as object, () => this.emit("npcChange", { id, npc }));
+    });
+    cb.onRemove("npcs", (_npc: NpcStateShape, id: string) => this.emit("npcRemove", { id }));
 
     room.onMessage(ServerMessage.Welcome, (m: WelcomePayload) => this.emit("welcome", m));
     room.onMessage(ServerMessage.Chat, (m: ChatBroadcast) => this.emit("chat", m));
@@ -99,6 +110,8 @@ export class ZoneConnection extends Emitter<ZoneEvents> {
     room.onMessage(ServerMessage.VoicePeers, (m: VoicePeersPayload) => this.emit("voicePeers", m));
     room.onMessage(ServerMessage.PropertyChanged, (m: { plotId: string }) => this.emit("propertyChanged", m));
     room.onMessage(ServerMessage.EventUpdate, (m: { eventId: string }) => this.emit("eventUpdate", m));
+    room.onMessage(ServerMessage.ShopEnter, (m: ShopPresencePayload) => this.emit("shopEnter", m));
+    room.onMessage(ServerMessage.ShopLeave, (m: ShopPresencePayload) => this.emit("shopLeave", m));
     room.onMessage(ServerMessage.Pong, (m: { t: number }) => this.emit("latency", performance.now() - m.t));
 
     room.onDrop(() => this.emit("status", "reconnecting"));

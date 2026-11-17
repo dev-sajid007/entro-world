@@ -512,6 +512,30 @@ export class AvatarRig {
         p.uArmLX = 0.2;
         p.uArmRX = 0.2;
         break;
+      // Shopkeeper states (not player emotes): explaining with both hands, and attentive nodding.
+      case "talk": {
+        const g = Math.sin(t * 4.2);
+        const h = Math.sin(t * 2.7 + 1);
+        p.uArmLX = 0.55 + g * 0.18;
+        p.uArmRX = 0.5 - h * 0.2;
+        p.uArmLZ = 0.25;
+        p.uArmRZ = -0.25 - Math.max(0, h) * 0.2;
+        p.lArmLX = -1.25 + g * 0.2;
+        p.lArmRX = -1.15 + h * 0.25;
+        p.headX = Math.sin(t * 5.3) * 0.06;
+        p.headY = Math.sin(t * 0.9) * 0.15;
+        p.torsoY = g * 0.05;
+        break;
+      }
+      case "listen":
+        p.headX = 0.08 + Math.max(0, Math.sin(t * 1.6)) * 0.1;
+        p.headY = Math.sin(t * 0.4) * 0.08;
+        p.torsoX = 0.04;
+        p.uArmLX = 0.15;
+        p.uArmRX = 0.15;
+        p.lArmLX = -0.5;
+        p.lArmRX = -0.5;
+        break;
       default:
         break;
     }

@@ -31,8 +31,25 @@ export interface ObjectStateShape {
   value: string;
 }
 
+/** An AI shopkeeper. Clients look up the agent's public persona through the API by `agentId`. */
+export interface NpcStateShape {
+  id: string;
+  shopSlug: string;
+  agentId: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+  /** One of NPC_STATES. */
+  anim: string;
+  /** JSON-encoded AvatarConfig. */
+  avatar: string;
+}
+
 export interface ZoneStateShape {
   zoneId: string;
   players: Map<string, PlayerStateShape> & { forEach(cb: (value: PlayerStateShape, key: string) => void): void };
   objects: Map<string, ObjectStateShape> & { forEach(cb: (value: ObjectStateShape, key: string) => void): void };
+  npcs: Map<string, NpcStateShape> & { forEach(cb: (value: NpcStateShape, key: string) => void): void };
 }

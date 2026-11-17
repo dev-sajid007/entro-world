@@ -68,27 +68,44 @@ class ApiClient {
     return null;
   }
 
-  async request<T>(method: string, path: string, body?: unknown, retried = false): Promise<T> {
+  /** Sends an authenticated request, refreshing an expired access token once. Throws ApiError unless 2xx. */
+  private async send(method: string, path: string, body: unknown, extra: { accept?: string; signal?: AbortSignal } = {}, retried = false): Promise<Response> {
     const headers: Record<string, string> = {};
     if (body !== undefined) headers["content-type"] = "application/json";
+    if (extra.accept) headers.accept = extra.accept;
     if (this.session) headers.authorization = `Bearer ${this.session.accessToken}`;
     const res = await fetch(`${BASE}${path}`, {
       method,
       headers,
       credentials: "include",
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(extra.signal ? { signal: extra.signal } : {}),
     });
     if (res.status === 401 && this.session && !retried) {
       const error = await toError(res);
       if (error.code === "token_expired" || error.code === "invalid_token") {
-        if (await this.refresh()) return this.request<T>(method, path, body, true);
+        if (await this.refresh()) return this.send(method, path, body, extra, true);
       }
       this.setSession(null);
       throw error;
     }
     if (!res.ok) throw await toError(res);
+    return res;
+  }
+
+  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.send(method, path, body);
     if (res.status === 204 || res.status === 202) return undefined as T;
     return (await res.json()) as T;
+  }
+
+  /** POSTs and returns the Server-Sent Events body; errors before the stream starts throw ApiError. */
+  async stream(path: string, body: unknown, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+    const res = await this.send("POST", path, body, { accept: "text/event-stream", ...(signal ? { signal } : {}) });
+    if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      throw new ApiError(502, "network_error", "The server sent an unexpected response.");
+    }
+    return res.body;
   }
 
   get = <T>(path: string) => this.request<T>("GET", path);

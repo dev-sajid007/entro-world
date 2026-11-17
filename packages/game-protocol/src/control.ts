@@ -20,3 +20,22 @@ export type UserControl = z.infer<typeof userControlSchema>;
  */
 export const onlineKey = (userId: string) => `ew:online:${userId}`;
 export const ONLINE_TTL_SECONDS = 60;
+
+/**
+ * Shopkeeper NPC animation updates from the AI agent service. Every game server hosting the
+ * agent's shop applies them; the LLM itself never runs inside the game loop.
+ */
+export const NPC_CONTROL_CHANNEL = "ew:npc-control";
+
+/** What a shopkeeper NPC shows: idle, listening to a customer at the counter, thinking, or talking. */
+export const NPC_STATES = ["idle", "listening", "thinking", "talking"] as const;
+export type NpcAnimState = (typeof NPC_STATES)[number];
+
+export const npcControlSchema = z.object({
+  type: z.literal("npc_state"),
+  agentId: z.uuid(),
+  conversationId: z.uuid(),
+  /** "idle" ends the conversation's turn. */
+  state: z.enum(["thinking", "talking", "idle"]),
+});
+export type NpcControl = z.infer<typeof npcControlSchema>;

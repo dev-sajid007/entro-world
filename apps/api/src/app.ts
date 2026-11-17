@@ -4,11 +4,13 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { sql } from "drizzle-orm";
 import type { AppContext, AppDeps } from "./context";
+import { AiServiceClient } from "./lib/ai-service";
 import { forbidden } from "./lib/errors";
 import { PresenceReader } from "./lib/presence";
 import { AccessTokens, GameTickets } from "./lib/tokens";
 import { authRoutes } from "./modules/auth/routes";
 import { friendRoutes } from "./modules/friends/routes";
+import { marketRoutes } from "./modules/market/routes";
 import { postRoutes } from "./modules/posts/routes";
 import { userRoutes } from "./modules/users/routes";
 import { worldRoutes } from "./modules/worlds/routes";
@@ -37,6 +39,7 @@ export async function buildApp(deps: AppDeps, options: BuildOptions = {}): Promi
     accessTokens: new AccessTokens(env.JWT_ACCESS_SECRET, env.ACCESS_TOKEN_TTL_SECONDS),
     gameTickets: new GameTickets(env.GAME_TICKET_SECRET),
     presence: new PresenceReader(deps.redis),
+    ai: new AiServiceClient(env),
   };
   app.decorate("ctx", ctx);
 
@@ -98,6 +101,7 @@ export async function buildApp(deps: AppDeps, options: BuildOptions = {}): Promi
       await api.register(friendRoutes, { prefix: "/friends" });
       await api.register(postRoutes, { prefix: "/posts" });
       await api.register(worldRoutes, { prefix: "/worlds" });
+      await api.register(marketRoutes, { prefix: "/market" });
     },
     { prefix: API_PREFIX },
   );

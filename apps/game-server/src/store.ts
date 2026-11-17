@@ -3,11 +3,16 @@ import {
   closeServerInstances,
   createDatabase,
   getAvatar,
+  listShopkeepers,
   saveWorldStates,
   upsertWorldInstance,
+  type ShopkeeperRecord,
   type StoredWorldPosition,
 } from "@entroworld/database";
+
+export type { ShopkeeperRecord };
 import type { AvatarConfig, ZoneId } from "@entroworld/shared";
+import { getCityLayout } from "@entroworld/world-assets";
 
 export type SavedPosition = { userId: string } & StoredWorldPosition;
 
@@ -24,6 +29,8 @@ export interface WorldStore {
   avatar(userId: string, username: string): Promise<AvatarConfig>;
   savePositions(rows: SavedPosition[]): Promise<void>;
   recordInstance(instance: InstanceRecord): Promise<void>;
+  /** AI shopkeepers open in a zone. */
+  shopkeepers(zoneId: ZoneId): Promise<ShopkeeperRecord[]>;
   /** Marks every instance of this server closed (startup after a crash). */
   closeServerInstances(serverId: string): Promise<void>;
   close(): Promise<void>;
@@ -35,6 +42,7 @@ export function databaseStore(url: string): WorldStore {
     avatar: (userId, username) => getAvatar(db, userId, username),
     savePositions: (rows) => saveWorldStates(db, rows),
     recordInstance: (instance) => upsertWorldInstance(db, instance),
+    shopkeepers: (zoneId) => listShopkeepers(db, zoneId),
     closeServerInstances: (serverId) => closeServerInstances(db, serverId),
     close,
   };
@@ -48,14 +56,18 @@ export function memoryStore(): WorldStore & {
   positions: Map<string, SavedPosition>;
   instances: Map<string, InstanceRecord>;
   avatars: Map<string, AvatarConfig>;
+  /** Shopkeepers by shop slug (none unless a test adds them: there is no agent registry offline). */
+  shops: Map<string, ShopkeeperRecord>;
 } {
   const positions = new Map<string, SavedPosition>();
   const instances = new Map<string, InstanceRecord>();
   const avatars = new Map<string, AvatarConfig>();
+  const shops = new Map<string, ShopkeeperRecord>();
   return {
     positions,
     instances,
     avatars,
+    shops,
     async avatar(userId, username) {
       return avatars.get(userId) ?? generateAvatar(username);
     },
@@ -64,6 +76,10 @@ export function memoryStore(): WorldStore & {
     },
     async recordInstance(instance) {
       instances.set(instance.roomId, { ...instance });
+    },
+    async shopkeepers(zoneId) {
+      const slugs = new Set(getCityLayout().shops.filter((s) => s.zoneId === zoneId).map((s) => s.slug));
+      return [...shops.values()].filter((s) => slugs.has(s.shopSlug));
     },
     async closeServerInstances(serverId) {
       for (const i of instances.values()) if (i.serverId === serverId) Object.assign(i, { status: "closed", currentPlayers: 0 });

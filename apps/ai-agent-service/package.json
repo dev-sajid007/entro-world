@@ -1,0 +1,31 @@
+{
+  "name": "@entroworld/ai-agent-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "start": "node --env-file-if-exists=../../.env dist/server.js",
+    "build": "node ../../infra/scripts/build-node.mjs src/server.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
+    "@entroworld/agent-protocol": "workspace:*",
+    "@entroworld/config": "workspace:*",
+    "@entroworld/database": "workspace:*",
+    "@entroworld/game-protocol": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.8",
+    "ioredis": "^6.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.0",
+    "pg": "^8.23.1"
+  }
+}

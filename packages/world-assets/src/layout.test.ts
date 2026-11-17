@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ZONE_IDS, rectContains } from "@entroworld/shared";
-import { generateCityLayout, getCityLayout, plotLocalToWorld, worldToPlotLocal, zoneAt } from "./layout";
+import { OPEN_SHOP, generateCityLayout, getCityLayout, plotLocalToWorld, worldToPlotLocal, zoneAt } from "./layout";
 import { findNearestInteractive, getPlot, resolveZone } from "./queries";
 
 const pointInBox = (c: { x: number; z: number; hx: number; hz: number; rotation: number }, x: number, z: number, pad = 0) => {
@@ -20,7 +20,7 @@ describe("city layout", () => {
     expect(JSON.stringify(generateCityLayout())).toEqual(JSON.stringify(layout));
   });
 
-  it("defines all six zones with spawn points inside them", () => {
+  it("defines every zone with a spawn point inside it", () => {
     expect(layout.zones.map((z) => z.id).sort()).toEqual([...ZONE_IDS].sort());
     for (const zone of layout.zones) {
       expect(rectContains(zone.bounds, zone.spawn.x, zone.spawn.z)).toBe(true);
@@ -73,7 +73,7 @@ describe("city layout", () => {
     for (const k of ["seat", "board", "kiosk", "fountain", "screen", "plotSign"]) expect(kinds.has(k as never)).toBe(true);
     expect(layout.venues.length).toBeGreaterThanOrEqual(4);
     const kioskZones = new Set(layout.interactives.filter((i) => i.kind === "kiosk").map((k) => k.zoneId));
-    expect(kioskZones.size).toBe(6);
+    expect(kioskZones.size).toBe(ZONE_IDS.length);
   });
 
   it("round-trips plot-local coordinates", () => {
@@ -91,6 +91,55 @@ describe("city layout", () => {
     expect(resolveZone("zone-central", -82, -40)).toBe("zone-central");
     expect(resolveZone("zone-central", -90, -40)).toBe("zone-business");
     expect(resolveZone("zone-business", -78, -40)).toBe("zone-business");
+    // AI Agent Street lies west of the Business District.
+    expect(resolveZone("zone-business", -250, -80)).toBe("zone-business");
+    expect(resolveZone("zone-business", -256, -80)).toBe("zone-market");
+  });
+
+  describe("AI Agent Street", () => {
+    const blockers = (x: number, z: number, pad: number) =>
+      layout.colliders.filter((c) =>
+        c.kind === "box" ? pointInBox(c, x, z, pad) : Math.hypot(c.x - x, c.z - z) < c.radius + pad,
+      );
+
+    it("has seven shops in zone-market, with Code Corner open", () => {
+      expect(layout.shops.map((s) => s.slug).sort()).toEqual(
+        ["book-cafe", "career-office", "code-corner", "design-studio", "language-school", "travel-agency", "wellness-corner"],
+      );
+      for (const shop of layout.shops) expect(zoneAt(shop.x, shop.z)).toBe("zone-market");
+      expect(layout.shops.filter((s) => s.open).map((s) => s.slug)).toEqual(["code-corner"]);
+    });
+
+    it("puts the shopkeeper behind the counter and the trigger in front of it", () => {
+      const shop = layout.shops.find((s) => s.slug === "code-corner")!;
+      expect(blockers(shop.keeper.x, shop.keeper.z, 0.35)).toEqual([]);
+      expect(blockers(shop.trigger.x, shop.trigger.z, 0.6)).toEqual([]);
+      // The counter separates them: walking straight from the trigger to the keeper hits it.
+      const steps = 20;
+      let blocked = false;
+      for (let i = 0; i <= steps; i++) {
+        const x = shop.trigger.x + ((shop.keeper.x - shop.trigger.x) * i) / steps;
+        const z = shop.trigger.z + ((shop.keeper.z - shop.trigger.z) * i) / steps;
+        if (blockers(x, z, 0).length > 0) blocked = true;
+      }
+      expect(blocked).toBe(true);
+      // The keeper faces the customers.
+      const fx = -Math.sin(shop.keeper.rotation);
+      const fz = -Math.cos(shop.keeper.rotation);
+      expect(fx * (shop.trigger.x - shop.keeper.x) + fz * (shop.trigger.z - shop.keeper.z)).toBeGreaterThan(OPEN_SHOP.keeperZ - OPEN_SHOP.triggerZ - 0.01);
+      const counter = findNearestInteractive(shop.trigger.x, shop.trigger.z, (o) => o.kind === "shopkeeper");
+      expect(counter?.ref).toBe("code-corner");
+    });
+
+    it("is reachable from the Business District road", () => {
+      // Walk west along z = -80 from the road into the boulevard: nothing blocks the way.
+      for (let x = -240; x >= -290; x -= 0.5) expect(blockers(x, -80, 0.35), `blocked at x=${x}`).toEqual([]);
+    });
+
+    it("keeps the sea corner south of the annex closed", () => {
+      expect(blockers(-290, 0.5, 0).length).toBeGreaterThan(0);
+      expect(blockers(-248.5, 40, 0).length).toBeGreaterThan(0);
+    });
   });
 
   it("finds interactives near a point", () => {

@@ -5,6 +5,7 @@ import type {
   CityLayout,
   Collider,
   InteractiveObject,
+  MarketShop,
   Plot,
   Prop,
   PropKind,
@@ -21,16 +22,23 @@ import type {
  * from fixed constants and the seeded PRNG only.
  */
 
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 export const CITY_SEED = 20_260_101;
 
-/** Walkable map bounds. */
-export const MAP_BOUNDS: Rect = { minX: -248, maxX: 248, minZ: -168, maxZ: 168 };
+/** The original 3x2 district grid. */
+const CORE_BOUNDS: Rect = { minX: -248, maxX: 248, minZ: -168, maxZ: 168 };
+/**
+ * AI Agent Street: an annex west of the Business District, generated separately from the grid so
+ * the rest of the city stays exactly as it was. The land south of it is sea.
+ */
+export const MARKET_ANNEX: Rect = { minX: -328, maxX: -248, minZ: -168, maxZ: 0 };
+/** Walkable map bounds (the island is L-shaped; seawalls block the corner outside it). */
+export const MAP_BOUNDS: Rect = { minX: MARKET_ANNEX.minX, maxX: CORE_BOUNDS.maxX, minZ: CORE_BOUNDS.minZ, maxZ: CORE_BOUNDS.maxZ };
 /** Vertical (constant-x) and horizontal (constant-z) street lines. */
 export const X_LINES = [-160, -80, 0, 80, 160] as const;
 export const Z_LINES = [-80, 0, 80] as const;
-const X_EDGES = [MAP_BOUNDS.minX, ...X_LINES, MAP_BOUNDS.maxX];
-const Z_EDGES = [MAP_BOUNDS.minZ, ...Z_LINES, MAP_BOUNDS.maxZ];
+const X_EDGES = [CORE_BOUNDS.minX, ...X_LINES, CORE_BOUNDS.maxX];
+const Z_EDGES = [CORE_BOUNDS.minZ, ...Z_LINES, CORE_BOUNDS.maxZ];
 
 export const ROAD_HALF_WIDTH = 5;
 export const SIDEWALK_WIDTH = 3;
@@ -45,6 +53,7 @@ const ZONE_BOUNDS: Record<ZoneId, Rect> = {
   "zone-residential": { minX: -248, maxX: -80, minZ: 0, maxZ: 168 },
   "zone-park": { minX: -80, maxX: 80, minZ: 0, maxZ: 168 },
   "zone-beach": { minX: 80, maxX: 248, minZ: 0, maxZ: 168 },
+  "zone-market": MARKET_ANNEX,
 };
 
 type LineKind = "road" | "pedestrian" | "park" | "sand";
@@ -77,6 +86,7 @@ const sideSurface: Record<LineKind, SurfaceKind> = {
 };
 
 export function zoneAt(x: number, z: number): ZoneId {
+  if (x < CORE_BOUNDS.minX) return "zone-market";
   const col = x < -80 ? 0 : x < 80 ? 1 : 2;
   const row = z < 0 ? 0 : 1;
   const grid: ZoneId[][] = [
@@ -87,12 +97,16 @@ export function zoneAt(x: number, z: number): ZoneId {
 }
 
 export function chunkKeyAt(x: number, z: number): string {
-  let ix = 0;
-  while (ix < X_EDGES.length - 2 && x >= X_EDGES[ix + 1]!) ix++;
   let iz = 0;
   while (iz < Z_EDGES.length - 2 && z >= Z_EDGES[iz + 1]!) iz++;
+  if (x < CORE_BOUNDS.minX) return `a0_${Math.min(iz, ANNEX_CHUNK_ROWS - 1)}`;
+  let ix = 0;
+  while (ix < X_EDGES.length - 2 && x >= X_EDGES[ix + 1]!) ix++;
   return `c${ix}_${iz}`;
 }
+
+/** The annex is split into chunks along the same z lines as the grid. */
+const ANNEX_CHUNK_ROWS = 2;
 
 export function zoneBounds(zoneId: ZoneId): Rect {
   return ZONE_BOUNDS[zoneId];
@@ -264,16 +278,28 @@ class LayoutBuilder {
     minSpacing = 4,
     scaleRange: [number, number] = [0.85, 1.25],
   ): void {
+    this.scatterWith(this.rng, kind, rect, count, avoid, minSpacing, scaleRange);
+  }
+
+  scatterWith(
+    rng: () => number,
+    kind: PropKind,
+    rect: Rect,
+    count: number,
+    avoid: Rect[] = [],
+    minSpacing = 4,
+    scaleRange: [number, number] = [0.85, 1.25],
+  ): void {
     const placed: [number, number][] = [];
     let attempts = 0;
     while (placed.length < count && attempts < count * 30) {
       attempts++;
-      const x = range(this.rng, rect.minX, rect.maxX);
-      const z = range(this.rng, rect.minZ, rect.maxZ);
+      const x = range(rng, rect.minX, rect.maxX);
+      const z = range(rng, rect.minZ, rect.maxZ);
       if (avoid.some((r) => x > r.minX - 1 && x < r.maxX + 1 && z > r.minZ - 1 && z < r.maxZ + 1)) continue;
       if (placed.some(([px, pz]) => Math.hypot(px - x, pz - z) < minSpacing)) continue;
       placed.push([x, z]);
-      this.prop(kind, round(x), round(z), round(this.rng() * Math.PI * 2), round(range(this.rng, ...scaleRange)));
+      this.prop(kind, round(x), round(z), round(rng() * Math.PI * 2), round(range(rng, ...scaleRange)));
     }
   }
 }
@@ -430,6 +456,7 @@ const SHOP_NAMES: Record<ZoneId, string[]> = {
   "zone-business": [],
   "zone-park": [],
   "zone-residential": [],
+  "zone-market": [],
 };
 
 function businessCell(b: LayoutBuilder, c: Cell): void {
@@ -860,10 +887,14 @@ function beachCell(b: LayoutBuilder, c: Cell): void {
 function boundaries(b: LayoutBuilder): void {
   const H = 3;
   const { minX, maxX, minZ, maxZ } = MAP_BOUNDS;
-  // West, north and south seawalls (players cannot leave the island).
-  b.wall("west", minX - 1, minX, minZ - 1, maxZ + 1, H);
+  const annex = MARKET_ANNEX;
+  // West, north and south seawalls (players cannot leave the island). The west side steps in
+  // where the AI Agent Street annex ends.
+  b.wall("west", minX - 1, minX, minZ - 1, annex.maxZ + 1, H);
+  b.wall("annex-south", minX - 1, CORE_BOUNDS.minX, annex.maxZ, annex.maxZ + 1, H);
+  b.wall("west-south", CORE_BOUNDS.minX - 1, CORE_BOUNDS.minX, annex.maxZ, maxZ + 1, H);
   b.wall("north", minX - 1, maxX + 1, minZ - 1, minZ, H);
-  b.wall("south", minX - 1, maxX + 1, maxZ, maxZ + 1, H);
+  b.wall("south", CORE_BOUNDS.minX - 1, maxX + 1, maxZ, maxZ + 1, H);
   // East: seawall next to the event zone, and the shoreline in the beach zone.
   b.wall("east", maxX, maxX + 1, minZ - 1, 1, H);
   b.wall("shore", SHORELINE_X, SHORELINE_X + 1, -1, maxZ + 1, H);
@@ -880,6 +911,8 @@ function buildZones(): ZoneLayout[] {
     { id: "zone-park", name: ZONES["zone-park"].name, bounds: ZONE_BOUNDS["zone-park"], spawn: spawn(-60, 16, Math.PI), ambience: "nature" },
     { id: "zone-beach", name: ZONES["zone-beach"].name, bounds: ZONE_BOUNDS["zone-beach"], spawn: spawn(152, 20, -Math.PI / 2), ambience: "beach" },
     { id: "zone-event", name: ZONES["zone-event"].name, bounds: ZONE_BOUNDS["zone-event"], spawn: spawn(120, -40, 0), ambience: "event" },
+    // At the street gate, looking across the boulevard into Code Corner.
+    { id: "zone-market", name: ZONES["zone-market"].name, bounds: ZONE_BOUNDS["zone-market"], spawn: spawn(-272, -80, Math.PI / 2), ambience: "urban" },
   ];
 }
 
@@ -911,12 +944,18 @@ export function generateCityLayout(seed = CITY_SEED): CityLayout {
     }
   }
   centralPlaza(b);
+  // Generated last, with its own random stream, so the original districts are unaffected.
+  const shops = agentStreet(new LayoutBuilderView(b, createRng(seed ^ 0x5eed_a1)));
   boundaries(b);
   // Business district kiosk and board near the spawn point.
   b.interactive({ id: "kiosk:business", kind: "kiosk", x: -166, y: 0, z: -46, rotation: 0, radius: 3, label: "City transit kiosk" });
   b.box(-166, 1.1, -46, 0.6, 1.1, 0.6, 0);
 
   const chunks: Chunk[] = cells.map((c) => ({ key: c.key, rect: c.rect, zoneId: c.zoneId }));
+  for (let i = 0; i < ANNEX_CHUNK_ROWS; i++) {
+    const rect: Rect = { ...MARKET_ANNEX, minZ: Z_EDGES[i]!, maxZ: Math.min(Z_EDGES[i + 1]!, MARKET_ANNEX.maxZ) };
+    chunks.push({ key: `a0_${i}`, rect, zoneId: "zone-market" });
+  }
   return {
     version: LAYOUT_VERSION,
     bounds: MAP_BOUNDS,
@@ -930,9 +969,156 @@ export function generateCityLayout(seed = CITY_SEED): CityLayout {
     interactives: b.interactives,
     plots: b.plots,
     venues: b.venues,
+    shops,
     water: b.water,
     colliders: b.colliders,
   };
+}
+
+// -------------------------------------------------------------------------------------------------
+// AI Agent Street (zone-market)
+// -------------------------------------------------------------------------------------------------
+
+/** Shares the builder's output lists but draws randomness from a separate stream. */
+class LayoutBuilderView {
+  constructor(
+    readonly b: LayoutBuilder,
+    readonly rng: () => number,
+  ) {}
+}
+
+/** Center line of the pedestrian boulevard that runs north-south through the annex. */
+export const AGENT_STREET_X = -290;
+const BOULEVARD_HALF_WIDTH = 7;
+/** The arch over the connector from the Business District road at z = -80. */
+export const AGENT_STREET_GATE = { x: -254, z: -80, width: 13, label: "AI AGENT STREET" } as const;
+
+/**
+ * The shops of AI Agent Street, one per AI agent (slugs match `market_shops.slug`). Only open shops
+ * have an interior and a shopkeeper; the rest are storefronts that open in later milestones.
+ */
+const AGENT_SHOPS: { slug: string; name: string; open: boolean; side: "west" | "east"; z: number; color: string }[] = [
+  { slug: "code-corner", name: "Code Corner", open: true, side: "west", z: -80, color: "#5b7fa6" },
+  { slug: "book-cafe", name: "Book Café", open: false, side: "west", z: -128, color: "#c9a27e" },
+  { slug: "language-school", name: "Language School", open: false, side: "west", z: -32, color: "#9cb4cc" },
+  { slug: "design-studio", name: "Design Studio", open: false, side: "east", z: -140, color: "#d99a9e" },
+  { slug: "career-office", name: "Career Office", open: false, side: "east", z: -112, color: "#b8b2a7" },
+  { slug: "travel-agency", name: "Travel Agency", open: false, side: "east", z: -48, color: "#8fa998" },
+  { slug: "wellness-corner", name: "Wellness Corner", open: false, side: "east", z: -20, color: "#e0b973" },
+];
+
+/** Interior dimensions of an open shop (local space: front at -depth/2, counter across the room). */
+export const OPEN_SHOP = {
+  width: 16,
+  depth: 14,
+  height: 5,
+  wall: 0.3,
+  /** Local z of the counter's center line, and its half thickness and height. */
+  counterZ: 2.2,
+  counterHalfDepth: 0.45,
+  counterHeight: 1.05,
+  keeperZ: 3.7,
+  triggerZ: -1.6,
+  triggerRadius: 4.6,
+} as const;
+
+function agentStreet(view: LayoutBuilderView): MarketShop[] {
+  const { b, rng } = view;
+  const a = MARKET_ANNEX;
+  const bx0 = AGENT_STREET_X - BOULEVARD_HALF_WIDTH;
+  const bx1 = AGENT_STREET_X + BOULEVARD_HALF_WIDTH;
+  const gate = AGENT_STREET_GATE;
+  b.surface("sidewalk", a, 0.02);
+  b.surface("plaza", { minX: bx0, maxX: bx1, minZ: a.minZ + PROMENADE_WIDTH, maxZ: a.maxZ - PROMENADE_WIDTH }, 0.03);
+  b.surface("plaza", { minX: bx1, maxX: a.maxX, minZ: gate.z - gate.width / 2, maxZ: gate.z + gate.width / 2 }, 0.03);
+
+  // Gate pillars (the arch itself is drawn by the client).
+  for (const side of [-1, 1]) b.cylinder(gate.x, 2.5, gate.z + side * (gate.width / 2 + 0.5), 0.55, 2.5);
+
+  const shops: MarketShop[] = [];
+  for (const def of AGENT_SHOPS) {
+    // West-side fronts face +x (yaw -PI/2), east-side fronts face -x (yaw PI/2).
+    const rotation = def.side === "west" ? -Math.PI / 2 : Math.PI / 2;
+    const depth = def.open ? OPEN_SHOP.depth : 12;
+    const width = def.open ? OPEN_SHOP.width : 16;
+    const frontX = def.side === "west" ? bx0 - 2 : bx1 + 2;
+    const x = round(def.side === "west" ? frontX - depth / 2 : frontX + depth / 2);
+    const z = def.z;
+    const height = def.open ? OPEN_SHOP.height : round(range(rng, 7, 10));
+    const local = (lx: number, lz: number) => {
+      const [dx, dz] = rotY(lx, lz, rotation);
+      return { x: round(x + dx), z: round(z + dz) };
+    };
+    const keeper = { ...local(0, OPEN_SHOP.keeperZ), rotation: round(rotation) };
+    const trigger = { ...local(0, OPEN_SHOP.triggerZ), radius: OPEN_SHOP.triggerRadius };
+    shops.push({
+      slug: def.slug,
+      name: def.name,
+      zoneId: zoneAt(x, z),
+      chunk: chunkKeyAt(x, z),
+      x,
+      z,
+      rotation: round(rotation),
+      width,
+      depth,
+      height,
+      color: def.color,
+      open: def.open,
+      keeper,
+      trigger,
+    });
+    if (!def.open) {
+      b.building({ x, z, width, depth, height, rotation, facade: "shop", color: def.color, roof: "flat", sign: def.name });
+      continue;
+    }
+    // Open shop: back wall, side walls and the counter collide; the front is open.
+    const S = OPEN_SHOP;
+    const wallBox = (lx: number, lz: number, hx: number, hz: number, hy: number) => {
+      const c = local(lx, lz);
+      // Rotation is a multiple of PI/2, so the box stays axis-aligned with swapped extents.
+      b.box(c.x, hy, c.z, hz, hy, hx);
+    };
+    wallBox(0, S.depth / 2 - S.wall / 2, S.width / 2, S.wall / 2, S.height / 2);
+    for (const side of [-1, 1]) wallBox(side * (S.width / 2 - S.wall / 2), 0, S.wall / 2, S.depth / 2, S.height / 2);
+    wallBox(0, S.counterZ, S.width / 2, S.counterHalfDepth, S.counterHeight / 2);
+    b.interactive({
+      id: `shop:${def.slug}`,
+      kind: "shopkeeper",
+      x: trigger.x,
+      y: 0,
+      z: trigger.z,
+      rotation: round(rotation),
+      radius: S.triggerRadius,
+      label: def.name,
+      ref: def.slug,
+    });
+  }
+
+  // Street furniture along the boulevard edges, skipping the stretches in front of shop doors.
+  const fronts = shops.map((s) => ({ minZ: s.z - s.width / 2 - 1, maxZ: s.z + s.width / 2 + 1 }));
+  const gateGap = { minZ: gate.z - gate.width / 2 - 1, maxZ: gate.z + gate.width / 2 + 1 };
+  const clear = (z: number, sideFronts: typeof fronts) => !sideFronts.some((f) => z > f.minZ && z < f.maxZ);
+  const westFronts = fronts.filter((_, i) => AGENT_SHOPS[i]!.side === "west");
+  const eastFronts = [...fronts.filter((_, i) => AGENT_SHOPS[i]!.side === "east"), gateGap];
+  for (let z = a.minZ + 12; z <= a.maxZ - 10; z += 14) {
+    if (clear(z, westFronts)) b.prop("lamp", bx0 + 0.8, z, -Math.PI / 2);
+    if (clear(z + 7, eastFronts)) b.prop("lamp", bx1 - 0.8, z + 7, Math.PI / 2);
+  }
+  for (const z of [-152, -96, -64, -8]) {
+    b.prop("planter", AGENT_STREET_X, z, 0);
+    b.prop("tree", AGENT_STREET_X, z, 0, 0.9);
+  }
+  for (const z of [-104, -56]) b.prop("bench", AGENT_STREET_X, z, Math.PI / 2);
+  // A small garden between the east shops and the Business District.
+  const garden: Rect = { minX: bx1 + 16, maxX: a.maxX - 3, minZ: a.minZ + 6, maxZ: a.maxZ - 6 };
+  b.scatterWith(rng, "tree", garden, 10, [{ minX: garden.minX - 2, maxX: a.maxX, minZ: gate.z - 16, maxZ: gate.z + 16 }], 9);
+
+  // Transit kiosk and notice board by the gate.
+  b.interactive({ id: "kiosk:market", kind: "kiosk", x: -266, y: 0, z: -69, rotation: Math.PI / 2, radius: 3, label: "City transit kiosk" });
+  b.box(-266, 1.1, -69, 0.6, 1.1, 0.6, 0);
+  b.interactive({ id: "board:market", kind: "board", x: -266, y: 0, z: -91, rotation: Math.PI / 2, radius: 3.5, label: "Agent Street board" });
+  b.box(-266, 1.1, -91, 0.25, 1.1, 1.3, 0);
+  return shops;
 }
 
 let cached: CityLayout | null = null;

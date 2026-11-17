@@ -1,6 +1,6 @@
 import { Redis } from "ioredis";
 import { apiEnvSchema, loadEnv } from "@entroworld/config";
-import { createDatabase, runMigrations, seedWorld } from "@entroworld/database";
+import { createDatabase, runMigrations, seedMarket, seedWorld } from "@entroworld/database";
 import { buildApp } from "./app";
 import { consoleMailer, type Mailer } from "./lib/mailer";
 
@@ -18,6 +18,7 @@ if (env.NODE_ENV !== "production") {
   // Development convenience; production runs `pnpm db:migrate` as a deploy step.
   await runMigrations(db);
   await seedWorld(db);
+  await seedMarket(db);
 }
 
 // The console mailer logs through the app's logger, which exists only once the app is built.

@@ -7,6 +7,7 @@ import {
   AnimCode,
   ClientMessage,
   CloseReason,
+  NPC_CONTROL_CHANNEL,
   ONLINE_TTL_SECONDS,
   ServerMessage,
   USER_CONTROL_CHANNEL,
@@ -33,6 +34,7 @@ import { services } from "../services";
 import { InterestManager } from "../systems/InterestManager";
 import { StrikeCounter, createActionLimits, type ActionLimits, type TokenBucket } from "../systems/RateLimiter";
 import { ChatHistory, chatTopics, isChatBroadcast, sanitizeChatText } from "../systems/chat";
+import { Shopkeepers } from "../systems/shopkeepers";
 import { computeVoicePeers } from "../systems/voice";
 import { TicketError, presenceReplayGuard } from "../tickets";
 
@@ -49,6 +51,10 @@ const INSTANCE_EVERY_TICKS = 5 * NETWORK.serverTickRate;
 const PRESENCE_EVERY_TICKS = (ONLINE_TTL_SECONDS / 3) * NETWORK.serverTickRate;
 /** Positions are saved every 30 s (and when a player leaves), so a crash loses little. */
 export const SAVE_EVERY_TICKS = 30 * NETWORK.serverTickRate;
+/** Shopkeeper animation, facing and counter detection run at about 10 Hz. */
+const NPC_EVERY_TICKS = Math.max(1, Math.round(NETWORK.serverTickRate / 10));
+/** Shops opening or closing show up within a minute. */
+const NPC_REFRESH_TICKS = 60 * NETWORK.serverTickRate;
 
 type ZoneClient = Client<{ userData: Record<string, never>; auth: GameTicketClaims }>;
 
@@ -101,6 +107,8 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
   private readonly fountainCooldown = new Map<string, number>();
   private instanceDirty = false;
   private readonly onUserControl = (raw: unknown) => this.handleUserControl(raw);
+  private shopkeepers!: Shopkeepers;
+  private readonly onNpcControl = (raw: unknown) => this.shopkeepers.control(raw);
 
   private get svc() {
     return services();
@@ -129,6 +137,12 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
       obj.active = true;
       obj.value = "";
       this.state.objects.set(o.id, obj);
+    }
+
+    this.shopkeepers = new Shopkeepers(this.zoneId);
+    if (this.shopkeepers.shops.length > 0) {
+      await this.refreshShopkeepers();
+      await this.presence.subscribe(NPC_CONTROL_CHANNEL, this.onNpcControl);
     }
 
     this.registerMessages();
@@ -233,6 +247,8 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     if (!s) return;
     s.client = client;
     s.reconnection = null;
+    const shop = this.shopkeepers.shopOf(client.sessionId);
+    if (shop) client.send(ServerMessage.ShopEnter, shop);
     this.log.info("player reconnected", { sessionId: client.sessionId });
   }
 
@@ -253,6 +269,7 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     await this.presence.unsubscribe(chatTopics.zone(this.zoneId), this.onChatPublished);
     await this.presence.unsubscribe(chatTopics.global, this.onChatPublished);
     await this.presence.unsubscribe(USER_CONTROL_CHANNEL, this.onUserControl);
+    if (this.shopkeepers.shops.length > 0) await this.presence.unsubscribe(NPC_CONTROL_CHANNEL, this.onNpcControl);
     // Normally empty by now; on shutdown, save whoever is still here before the process exits.
     await this.savePositions([...this.sessions.values()]);
     for (const id of [...this.sessions.keys()]) this.removeSession(id, "dispose");
@@ -302,6 +319,8 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     if (this.tickCount % PRESENCE_EVERY_TICKS === 0) for (const s of this.sessions.values()) this.markOnline(s);
     if (this.tickCount % SAVE_EVERY_TICKS === 0) void this.savePositions([...this.sessions.values()]);
     if (this.instanceDirty && this.tickCount % INSTANCE_EVERY_TICKS === 0) this.writeInstance("open");
+    if (this.shopkeepers.size > 0 && this.tickCount % NPC_EVERY_TICKS === 0) this.updateShopkeepers(dt * NPC_EVERY_TICKS);
+    if (this.shopkeepers.shops.length > 0 && this.tickCount % NPC_REFRESH_TICKS === 0) void this.refreshShopkeepers();
 
     this.svc.metrics.recordTick(performance.now() - started, 1000 / NETWORK.serverTickRate);
   }
@@ -616,9 +635,35 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
       if (obj && obj.occupant === sessionId) obj.occupant = "";
     }
     s.sim.dispose();
+    this.shopkeepers.forget(sessionId);
     this.sessions.delete(sessionId);
     this.state.players.delete(sessionId);
     return true;
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // AI shopkeepers
+  // -----------------------------------------------------------------------------------------------
+
+  /** Places the zone's open AI shopkeepers (and removes closed ones). Never blocks the tick. */
+  private async refreshShopkeepers(): Promise<void> {
+    try {
+      const { added, removed } = this.shopkeepers.sync(await this.svc.store.shopkeepers(this.zoneId));
+      for (const id of removed) this.state.npcs.delete(id);
+      for (const npc of added) this.state.npcs.set(npc.id, npc);
+    } catch (err) {
+      this.log.warn("could not load shopkeepers", { err });
+    }
+  }
+
+  private updateShopkeepers(dt: number): void {
+    const customers = [];
+    for (const [sessionId, s] of this.sessions) {
+      customers.push({ sessionId, x: s.player.x, z: s.player.z, present: s.client !== null && s.transfer === null && s.player.seatId === "" });
+    }
+    for (const e of this.shopkeepers.update(customers, dt)) {
+      this.sessions.get(e.sessionId)?.client?.send(e.type === "enter" ? ServerMessage.ShopEnter : ServerMessage.ShopLeave, e.payload);
+    }
   }
 
   // -----------------------------------------------------------------------------------------------

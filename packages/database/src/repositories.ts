@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { generateAvatar, sanitizeAvatarConfig } from "@entroworld/avatar";
 import { ZONES, ZONE_IDS, type AvatarConfig, type ZoneId } from "@entroworld/shared";
 import type { DbExecutor } from "./client";
-import { avatars, userWorldState, worldInstances, worldZones, worlds } from "./schema";
+import { aiAgents, avatars, marketShops, userWorldState, worldInstances, worldZones, worlds } from "./schema";
 
 // Small data-access helpers shared by the API and the game server.
 
@@ -92,4 +92,21 @@ export async function seedWorld(db: DbExecutor): Promise<string> {
       .onConflictDoUpdate({ target: worldZones.slug, set: { name: zone.name, description: zone.description, worldId } });
   }
   return worldId;
+}
+
+export interface ShopkeeperRecord {
+  agentId: string;
+  shopSlug: string;
+  name: string;
+  avatarSeed: string;
+}
+
+/** AI shopkeepers that are open for business in a zone (game servers place them as NPCs). */
+export async function listShopkeepers(db: DbExecutor, zoneId: ZoneId): Promise<ShopkeeperRecord[]> {
+  const rows = await db
+    .select({ agentId: aiAgents.id, shopSlug: marketShops.slug, name: aiAgents.name, persona: aiAgents.persona })
+    .from(aiAgents)
+    .innerJoin(marketShops, eq(marketShops.id, aiAgents.shopId))
+    .where(and(eq(marketShops.zoneId, zoneId), eq(marketShops.status, "active"), eq(aiAgents.isActive, true)));
+  return rows.map((r) => ({ agentId: r.agentId, shopSlug: r.shopSlug, name: r.name, avatarSeed: r.persona.avatarSeed }));
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import type { WorldJoinResponse, ZoneId } from "@entroworld/shared";
 import { api } from "../../lib/api";
@@ -6,6 +7,8 @@ import { useAuth, useCurrentUser } from "../auth/AuthContext";
 import { useBlocked, useMyAvatar, useZonePosts } from "../social/hooks";
 import { Composer, PostList } from "../social/Posts";
 import socialStyles from "../social/Social.module.css";
+import { shopQuery } from "../market/hooks";
+import { ShopPanel } from "../market/ShopPanel";
 import type { GameEngine } from "../../game/core/GameEngine";
 import { PanelHeader, type PanelRequest } from "./Hud";
 import { useWorldSession } from "./WorldSession";
@@ -56,8 +59,10 @@ export default function WorldPage() {
 
 function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () => void }) {
   const ui = useSyncExternalStore(engine.ui.subscribe, engine.ui.get);
+  useShopGreetings(engine);
   const renderPanel = useCallback((panel: PanelRequest, close: () => void) => {
     if (panel.kind === "board") return <BoardPanel panel={panel} onClose={close} />;
+    if (panel.kind === "shopkeeper" && panel.object.ref) return <ShopPanel shopSlug={panel.object.ref} onClose={close} />;
     return (
       <div>
         <PanelHeader title={panel.object.label} onClose={close} />
@@ -68,6 +73,24 @@ function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () =>
 
   if (ui.status === "disconnected" && ui.error) return <WorldLoading text="" error={ui.error} onRetry={onRejoin} />;
   return <WorldLayer engine={engine} hudVisible renderPanel={renderPanel} topRight={<HudNav />} />;
+}
+
+/** The shopkeeper greets the player (in a speech bubble only they see) when they step up to the counter. */
+function useShopGreetings(engine: GameEngine) {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      engine.events.on("shopEnter", ({ shopSlug, agentId }) => {
+        void queryClient
+          .fetchQuery(shopQuery(shopSlug))
+          .then((shop) => {
+            if (engine.ui.get().shop?.shopSlug !== shopSlug || !shop.agent) return;
+            engine.shopkeeper(agentId)?.say(shop.agent.greeting, performance.now(), 9000);
+          })
+          .catch(() => undefined);
+      }),
+    [engine, queryClient],
+  );
 }
 
 function HudNav() {

@@ -1,5 +1,5 @@
 import pg from "pg";
-import { createDatabase, runMigrations, seedWorld } from "@entroworld/database";
+import { createDatabase, runMigrations, seedMarket, seedWorld } from "@entroworld/database";
 
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgres://entroworld:entroworld@127.0.0.1:5432/entroworld_test";
 
@@ -26,6 +26,7 @@ export default async function setup(): Promise<void> {
   try {
     await runMigrations(db);
     await seedWorld(db);
+    await seedMarket(db);
   } finally {
     await close();
   }

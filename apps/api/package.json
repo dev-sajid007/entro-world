@@ -14,6 +14,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",
     "@aws-sdk/s3-request-presigner": "^3.1169.0",
+    "@entroworld/agent-protocol": "workspace:*",
     "@entroworld/avatar": "workspace:*",
     "@entroworld/config": "workspace:*",
     "@entroworld/database": "workspace:*",
@@ -36,6 +37,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@entroworld/ai-agent-service": "workspace:*",
     "@types/pg": "^8.15.0",
     "@types/ws": "^8.18.1",
     "pg": "^8.23.1",

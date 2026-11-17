@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { saveWorldStates, upsertWorldInstance, worldZones } from "@entroworld/database";
 import { GAME_TICKET_AUDIENCE, USER_CONTROL_CHANNEL, gameTicketClaimsSchema } from "@entroworld/game-protocol";
 import { getZoneLayout } from "@entroworld/world-assets";
+import { ZONE_IDS } from "@entroworld/shared";
 import { eq } from "drizzle-orm";
 import { call, createHarness, register, type Harness } from "./harness";
 
@@ -30,9 +31,9 @@ describe("worlds", () => {
     const res = await call(h, "GET", "/worlds", { as: u });
     expect(res.statusCode).toBe(200);
     expect(res.data).toHaveLength(1);
-    expect(res.data[0].zones).toHaveLength(6);
+    expect(res.data[0].zones).toHaveLength(ZONE_IDS.length);
     expect(res.data[0].zones.find((z: { id: string }) => z.id === "zone-park").onlinePlayers).toBe(10);
-    expect((await call(h, "GET", `/worlds/${res.data[0].id}/zones`, { as: u })).data).toHaveLength(6);
+    expect((await call(h, "GET", `/worlds/${res.data[0].id}/zones`, { as: u })).data).toHaveLength(ZONE_IDS.length);
     expect((await call(h, "GET", "/worlds/zones/zone-beach", { as: u })).data.name).toBe("Waterfront");
     expect((await call(h, "GET", "/worlds/zones/zone-moon", { as: u })).statusCode).toBe(400);
     expect((await call(h, "GET", "/worlds"))).toMatchObject({ statusCode: 401 });

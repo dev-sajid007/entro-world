@@ -2,7 +2,7 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Environment as DreiEnvironment, Sky } from "@react-three/drei";
-import { getCityLayout, SHORELINE_X, type Surface, type SurfaceKind } from "@entroworld/world-assets";
+import { getCityLayout, MARKET_ANNEX, SHORELINE_X, type Surface, type SurfaceKind } from "@entroworld/world-assets";
 import type { GameEngine } from "../core/GameEngine";
 import { plainMaterial, pondMaterial, surfaceMaterial, waterMaterial } from "../assets/materials";
 import { SURFACE_TILE } from "../assets/textures";
@@ -160,6 +160,9 @@ export function RoadMarkings() {
 export function Island() {
   const layout = getCityLayout();
   const { minX, maxX, minZ, maxZ } = layout.bounds;
+  // The island is L-shaped: AI Agent Street extends the northern half to the west.
+  const annex = MARKET_ANNEX;
+  const southMinX = annex.maxX;
   const pond = layout.water.find((w) => w.kind === "pond");
   const beachSlope = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -183,19 +186,25 @@ export function Island() {
       <mesh position={[(minX + maxX) / 2, -depth / 2 - 0.01, (minZ - 4) / 2]} material={wall} receiveShadow>
         <boxGeometry args={[maxX - minX + 8, depth, -minZ + 4]} />
       </mesh>
-      <mesh position={[(minX - 4 + SHORELINE_X - 3) / 2, -depth / 2 - 0.01, (maxZ + 4) / 2]} material={wall} receiveShadow>
-        <boxGeometry args={[SHORELINE_X - 3 - minX + 4, depth, maxZ + 4]} />
+      <mesh position={[(southMinX - 4 + SHORELINE_X - 3) / 2, -depth / 2 - 0.01, (maxZ + 4) / 2]} material={wall} receiveShadow>
+        <boxGeometry args={[SHORELINE_X - 3 - southMinX + 4, depth, maxZ + 4]} />
       </mesh>
       <mesh geometry={beachSlope} material={surfaceMaterial("sand")} receiveShadow />
       {/* Promenade railings along the seawall. */}
       <mesh position={[(minX + maxX) / 2, 0.5, minZ - 0.5]} material={railing} castShadow>
         <boxGeometry args={[maxX - minX + 2, 1, 0.2]} />
       </mesh>
-      <mesh position={[(minX + SHORELINE_X) / 2 - 2, 0.5, maxZ + 0.5]} material={railing} castShadow>
-        <boxGeometry args={[SHORELINE_X - minX - 2, 1, 0.2]} />
+      <mesh position={[(southMinX + SHORELINE_X) / 2 - 2, 0.5, maxZ + 0.5]} material={railing} castShadow>
+        <boxGeometry args={[SHORELINE_X - southMinX - 2, 1, 0.2]} />
       </mesh>
-      <mesh position={[minX - 0.5, 0.5, 0]} material={railing} castShadow>
-        <boxGeometry args={[0.2, 1, maxZ - minZ + 2]} />
+      <mesh position={[minX - 0.5, 0.5, (minZ + annex.maxZ) / 2]} material={railing} castShadow>
+        <boxGeometry args={[0.2, 1, annex.maxZ - minZ + 2]} />
+      </mesh>
+      <mesh position={[(minX + southMinX) / 2 - 0.5, 0.5, annex.maxZ + 0.5]} material={railing} castShadow>
+        <boxGeometry args={[southMinX - minX + 1, 1, 0.2]} />
+      </mesh>
+      <mesh position={[southMinX - 0.5, 0.5, maxZ / 2]} material={railing} castShadow>
+        <boxGeometry args={[0.2, 1, maxZ + 2]} />
       </mesh>
       <mesh position={[maxX + 0.5, 0.5, minZ / 2]} material={railing} castShadow>
         <boxGeometry args={[0.2, 1, -minZ + 2]} />

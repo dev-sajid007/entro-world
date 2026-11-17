@@ -32,6 +32,9 @@ export const ServerMessage = {
   VoicePeers: "voice:peers",
   PropertyChanged: "property:changed",
   EventUpdate: "event:update",
+  /** The player walked up to a shop counter (entered its trigger area) or left it. */
+  ShopEnter: "shop:enter",
+  ShopLeave: "shop:leave",
   Pong: "pong",
 } as const;
 
@@ -128,6 +131,11 @@ export interface VoicePeer {
 
 export interface VoicePeersPayload {
   peers: VoicePeer[];
+}
+
+export interface ShopPresencePayload {
+  shopSlug: string;
+  agentId: string;
 }
 
 export interface ErrorPayload {

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@colyseus/sdk": "^0.18.10",
+    "@entroworld/agent-protocol": "workspace:*",
     "@entroworld/avatar": "workspace:*",
     "@entroworld/game-engine": "workspace:*",
     "@entroworld/game-protocol": "workspace:*",
