@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { Buttons } from "@entroworld/game-protocol";
 import { getCityLayout } from "@entroworld/world-assets";
-import { InputBudget, PhysicsWorld, PredictedCharacter, SIM, validateStep, sanitizeYaw } from "./index";
+import { InputBudget, PhysicsWorld, PredictedCharacter, SIM, groundTiles, validateStep, sanitizeYaw } from "./index";
 
 let physics: PhysicsWorld;
 
@@ -15,7 +15,30 @@ const run = (steps: number, fn: () => void) => {
 
 describe("PhysicsWorld", () => {
   it("loads every layout collider plus the ground", () => {
-    expect(physics.colliderCount).toBe(getCityLayout().colliders.length + PhysicsWorld.GROUND_TILES);
+    expect(physics.colliderCount).toBe(getCityLayout().colliders.length + groundTiles(getCityLayout()).length);
+  });
+
+  it("has ground under the whole map, including AI Agent Street's shop counters", () => {
+    const layout = getCityLayout();
+    const { minX, maxX, minZ, maxZ } = layout.bounds;
+    const inset = 0.5;
+    const points: [number, number][] = [
+      [minX + inset, minZ + inset],
+      [minX + inset, maxZ - inset],
+      [maxX - inset, minZ + inset],
+      [maxX - inset, maxZ - inset],
+    ];
+    for (const shop of layout.shops) points.push([shop.trigger.x, shop.trigger.z], [shop.keeper.x, shop.keeper.z]);
+    for (const [x, z] of points) expect(physics.groundHeight(x, z), `no ground at ${x}, ${z}`).not.toBeNull();
+  });
+
+  it("keeps a customer standing at the Code Corner counter", () => {
+    const shop = getCityLayout().shops.find((s) => s.slug === "code-corner")!;
+    const c = physics.createCharacter(shop.trigger.x, 0.5, shop.trigger.z);
+    run(180, () => physics.stepCharacter(c, 0, 0));
+    expect(c.state.grounded).toBe(true);
+    expect(c.state.y).toBeGreaterThan(-0.05);
+    physics.removeCharacter(c);
   });
 
   it("drops a character onto the ground and keeps it there", () => {

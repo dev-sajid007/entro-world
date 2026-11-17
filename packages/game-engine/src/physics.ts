@@ -96,6 +96,38 @@ export function deriveAnimation(state: CharacterState): number {
   return AnimCode.IDLE;
 }
 
+/** Half the edge of a square ground tile. */
+const GROUND_TILE_HALF = 50;
+/** Ground reaches this far past the map bounds (under the seawalls and railings). */
+const GROUND_MARGIN = 8;
+
+/** The ground the original city was built on: tile edges on multiples of 100 m. */
+const CORE_GROUND = { minX: -300, maxX: 300, minZ: -200, maxZ: 200 } as const;
+
+/**
+ * Centers of the ground tiles covering the layout's bounds plus a margin, on a world-aligned grid
+ * (edges on multiples of 100 m). The original city's tiles come first, in their original order,
+ * and tiles for map extensions (such as AI Agent Street) are appended: Rapier's contact resolution
+ * depends on collider creation order, so this keeps movement in the existing city unchanged.
+ */
+export function groundTiles(layout: CityLayout): { x: number; z: number }[] {
+  const size = GROUND_TILE_HALF * 2;
+  const { minX, maxX, minZ, maxZ } = layout.bounds;
+  const cover = {
+    minX: Math.min(CORE_GROUND.minX, Math.floor((minX - GROUND_MARGIN) / size) * size),
+    maxX: Math.max(CORE_GROUND.maxX, Math.ceil((maxX + GROUND_MARGIN) / size) * size),
+    minZ: Math.min(CORE_GROUND.minZ, Math.floor((minZ - GROUND_MARGIN) / size) * size),
+    maxZ: Math.max(CORE_GROUND.maxZ, Math.ceil((maxZ + GROUND_MARGIN) / size) * size),
+  };
+  const inCore = (x: number, z: number) => x >= CORE_GROUND.minX && x < CORE_GROUND.maxX && z >= CORE_GROUND.minZ && z < CORE_GROUND.maxZ;
+  const core: { x: number; z: number }[] = [];
+  const extension: { x: number; z: number }[] = [];
+  for (let x = cover.minX; x < cover.maxX; x += size) {
+    for (let z = cover.minZ; z < cover.maxZ; z += size) (inCore(x, z) ? core : extension).push({ x: x + GROUND_TILE_HALF, z: z + GROUND_TILE_HALF });
+  }
+  return [...core, ...extension];
+}
+
 /**
  * A Rapier world containing the static city colliders, plus a kinematic character controller.
  * Used identically by the client (prediction) and the server (authority).
@@ -116,11 +148,9 @@ export class PhysicsWorld {
     world.timestep = SIM.dt;
     const worldGroups = groups(GROUP_WORLD, 0xffff);
     // Ground, tiled: very large cuboids lose f32 precision in shape casts and let characters sink.
-    const tile = 50;
-    for (let x = -300; x < 300; x += tile * 2) {
-      for (let z = -200; z < 200; z += tile * 2) {
-        world.createCollider(R.ColliderDesc.cuboid(tile, 1, tile).setTranslation(x + tile, -1, z + tile).setCollisionGroups(worldGroups));
-      }
+    // The tiles cover the whole walkable map, so extensions such as AI Agent Street are never floorless.
+    for (const t of groundTiles(layout)) {
+      world.createCollider(R.ColliderDesc.cuboid(GROUND_TILE_HALF, 1, GROUND_TILE_HALF).setTranslation(t.x, -1, t.z).setCollisionGroups(worldGroups));
     }
     for (const c of layout.colliders) world.createCollider(colliderDesc(R, c).setCollisionGroups(worldGroups));
     // Build the broad-phase acceleration structure for scene queries.
@@ -136,9 +166,6 @@ export class PhysicsWorld {
     controller.setApplyImpulsesToDynamicBodies(false);
     return new PhysicsWorld(R, world, controller);
   }
-
-  /** Number of ground tiles created in addition to the layout colliders. */
-  static readonly GROUND_TILES = 24;
 
   get colliderCount(): number {
     return this.world.colliders.len();
