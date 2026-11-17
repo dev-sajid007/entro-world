@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import type { WorldJoinResponse, ZoneId } from "@entroworld/shared";
@@ -14,6 +14,9 @@ import type { GameEngine } from "../../game/core/GameEngine";
 import { PanelHeader, type PanelRequest } from "./Hud";
 import { useWorldSession } from "./WorldSession";
 import { WorldLayer, WorldLoading } from "./WorldLayer";
+
+// Blockly is large; it loads the first time someone opens the Puzzle Lab console.
+const AcademyPanel = lazy(() => import("../academy/AcademyPanel"));
 
 const requestTicket = (zoneId?: ZoneId) => api.post<WorldJoinResponse>("/worlds/join", zoneId ? { zoneId } : {});
 
@@ -64,6 +67,13 @@ function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () =>
   const renderPanel = useCallback((panel: PanelRequest, close: () => void) => {
     if (panel.kind === "board") return <BoardPanel panel={panel} onClose={close} />;
     if (panel.kind === "shopkeeper" && panel.object.ref) return <ShopPanel shopSlug={panel.object.ref} onClose={close} />;
+    if (panel.kind === "academyLab") {
+      return (
+        <Suspense fallback={<PanelHeader title="Puzzle Lab" subtitle="Starting the console…" onClose={close} />}>
+          <AcademyPanel onClose={close} />
+        </Suspense>
+      );
+    }
     return (
       <div>
         <PanelHeader title={panel.object.label} onClose={close} />

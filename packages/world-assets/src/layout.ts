@@ -1,5 +1,6 @@
 import { createRng, pick, range, type Rect, type ZoneId, ZONES } from "@entroworld/shared";
 import type {
+  AcademyLab,
   Building,
   Chunk,
   CityLayout,

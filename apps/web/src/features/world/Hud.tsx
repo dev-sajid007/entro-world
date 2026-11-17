@@ -160,8 +160,14 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
       {help && <HelpOverlay touch={touch} onClose={closeHelp} />}
 
       {panel && (
-        <div className={styles.panelBackdrop} onClick={closePanel}>
-          <div className={styles.panel} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={panel.object.label}>
+        // The Academy console docks to the side without dimming, so the puzzle board stays in view.
+        <div className={`${styles.panelBackdrop} ${panel.kind === "academyLab" ? styles.sideBackdrop : ""}`} onClick={closePanel}>
+          <div
+            className={`${styles.panel} ${panel.kind === "academyLab" ? styles.sidePanel : ""}`}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label={panel.object.label}
+          >
             {panel.kind === "kiosk" ? (
               <KioskPanel engine={engine} kiosk={panel.object} current={ui.zoneId} onClose={closePanel} />
             ) : (
@@ -196,6 +202,8 @@ function promptVerb(kind: Exclude<InteractiveKind, "shopkeeper">): string {
       return "View";
     case "plotSign":
       return "Visit";
+    case "academyLab":
+      return "Use";
   }
 }
 

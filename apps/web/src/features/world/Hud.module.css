@@ -263,6 +263,16 @@ kbd {
   overflow-y: auto;
   box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.7);
 }
+/* Docked panel (Academy console): right side on wide screens, bottom sheet on phones. */
+.sideBackdrop {
+  background: transparent;
+  justify-content: flex-end;
+  align-items: stretch;
+}
+.sidePanel {
+  width: min(720px, 100%);
+  max-height: none;
+}
 .panelHeader {
   display: flex;
   justify-content: space-between;
@@ -574,5 +584,14 @@ kbd {
   }
   .panel {
     max-height: 92dvh;
+  }
+}
+
+@media (max-width: 760px) {
+  .sideBackdrop {
+    align-items: flex-end;
+  }
+  .sidePanel {
+    max-height: 62dvh;
   }
 }

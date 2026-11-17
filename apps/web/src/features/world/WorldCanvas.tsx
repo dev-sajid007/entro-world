@@ -7,6 +7,7 @@ import type { GameEngine } from "../../game/core/GameEngine";
 import { Atmosphere, Island, RoadMarkings, Surfaces } from "../../game/scenes/Environment";
 import { ChunkLayer } from "../../game/scenes/ChunkLayer";
 import { Interactives, type ScreenContent } from "../../game/scenes/Interactives";
+import { AcademyLab } from "../../game/scenes/AcademyLab";
 import { Plots } from "../../game/scenes/Plots";
 import { PostEffects, chosenQuality, initialQuality, type GraphicsQuality } from "../../game/scenes/PostEffects";
 
@@ -77,6 +78,7 @@ export function WorldCanvas({ engine, properties, screen }: WorldCanvasProps) {
       <RoadMarkings />
       <ChunkLayer engine={engine} />
       <Interactives engine={engine} screen={screen} />
+      <AcademyLab engine={engine} />
       <Plots properties={properties} />
       <primitive object={engine.root} />
       <PostEffects quality={gfx.quality} />
