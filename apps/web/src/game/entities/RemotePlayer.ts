@@ -68,7 +68,19 @@ export class RemotePlayer {
 
   setDisplayName(name: string): void {
     this.displayName = name;
-    this.tag.setText(name);
+    this.updateTag();
+  }
+
+  /** Voice state from the server: a mic on the name tag while in voice, a speaker while talking. */
+  setVoice(voice: boolean, speaking: boolean): void {
+    if (voice === this.voice && speaking === this.speaking) return;
+    this.voice = voice;
+    this.speaking = speaking;
+    this.updateTag();
+  }
+
+  private updateTag(): void {
+    this.tag.setText(this.speaking ? `🔊 ${this.displayName}` : this.voice ? `🎙️ ${this.displayName}` : this.displayName);
   }
 
   push(snapshot: RemoteSnapshot, patchIntervalMs: number): void {

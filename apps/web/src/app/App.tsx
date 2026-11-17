@@ -5,6 +5,8 @@ import { queryClient } from "../lib/queryClient";
 import { AuthProvider, RequireAuth } from "../features/auth/AuthContext";
 import { LoginPage, RegisterPage, VerifyEmailPage } from "../features/auth/AuthPages";
 import { WorldSessionProvider } from "../features/world/WorldSession";
+import { CallOverlay } from "../features/voice/CallOverlay";
+import { VoiceProvider } from "../features/voice/VoiceContext";
 import { WorldLoading } from "../features/world/WorldLayer";
 import LandingPage from "./LandingPage";
 
@@ -24,6 +26,8 @@ export function App() {
       <WorldSessionProvider>
         <BrowserRouter>
           <AuthProvider>
+            <VoiceProvider>
+            <CallOverlay />
             <Suspense fallback={<WorldLoading text="Loading…" />}>
               <Routes>
                 <Route path="/" element={<LandingPage />} />
@@ -40,6 +44,7 @@ export function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
+            </VoiceProvider>
           </AuthProvider>
         </BrowserRouter>
       </WorldSessionProvider>

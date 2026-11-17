@@ -4,6 +4,7 @@ import { EMOTES, type EmoteId } from "@entroworld/avatar";
 import { PhysicsWorld, SIM } from "@entroworld/game-engine";
 import { CloseReason, isFinalCloseCode } from "@entroworld/game-protocol";
 import type {
+  CallEvent,
   ChatBroadcast,
   ChatChannel,
   InputFrame,
@@ -74,6 +75,7 @@ export interface EngineEvents extends Record<string, unknown> {
   toggleVoice: undefined;
   voiceToken: VoiceTokenPayload;
   voicePeers: VoicePeer[];
+  callEvent: CallEvent;
   propertyChanged: { plotId: string };
   eventUpdate: { eventId: string };
   system: string;
@@ -289,6 +291,7 @@ export class GameEngine {
     connection.on("transfer", (t) => void this.handleTransfer(t));
     connection.on("voiceToken", (t) => this.events.emit("voiceToken", t));
     connection.on("voicePeers", (p) => this.events.emit("voicePeers", p.peers));
+    connection.on("callEvent", (e) => this.events.emit("callEvent", e));
     connection.on("propertyChanged", (p) => this.events.emit("propertyChanged", p));
     connection.on("eventUpdate", (p) => this.events.emit("eventUpdate", p));
     connection.on("latency", (ms) => this.ui.set({ latency: Math.round(ms) }));
@@ -327,8 +330,7 @@ export class GameEngine {
     remote.anim = p.anim;
     remote.emote = p.emote;
     remote.seatId = p.seatId;
-    remote.voice = p.voice;
-    remote.speaking = p.speaking;
+    remote.setVoice(p.voice, p.speaking);
     remote.push({ t: performance.now(), x: p.x, y: p.y, z: p.z, rot: p.rot }, NETWORK.patchRateMs);
   }
 

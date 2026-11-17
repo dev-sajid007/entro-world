@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { callEventSchema } from "./calls";
 
 /**
  * Commands from the API to every game server, over Redis pub/sub (the channel Colyseus' Redis
@@ -11,6 +12,8 @@ export const userControlSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("disconnect"), userId: z.uuid(), reason: z.enum(["signed_out", "left", "suspended"]) }),
   /** The user changed their avatar outside the game; rooms should reload it. */
   z.object({ type: z.literal("avatar_changed"), userId: z.uuid() }),
+  /** A voice call event for the user (delivered to their game session as `ServerMessage.CallEvent`). */
+  z.object({ type: z.literal("call"), userId: z.uuid(), event: callEventSchema }),
 ]);
 export type UserControl = z.infer<typeof userControlSchema>;
 

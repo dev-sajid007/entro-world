@@ -9,6 +9,7 @@ import { forbidden } from "./lib/errors";
 import { PresenceReader } from "./lib/presence";
 import { AccessTokens, GameTickets } from "./lib/tokens";
 import { authRoutes } from "./modules/auth/routes";
+import { callRoutes } from "./modules/calls/routes";
 import { friendRoutes } from "./modules/friends/routes";
 import { marketRoutes } from "./modules/market/routes";
 import { postRoutes } from "./modules/posts/routes";
@@ -102,6 +103,7 @@ export async function buildApp(deps: AppDeps, options: BuildOptions = {}): Promi
       await api.register(postRoutes, { prefix: "/posts" });
       await api.register(worldRoutes, { prefix: "/worlds" });
       await api.register(marketRoutes, { prefix: "/market" });
+      await api.register(callRoutes, { prefix: "/calls" });
     },
     { prefix: API_PREFIX },
   );

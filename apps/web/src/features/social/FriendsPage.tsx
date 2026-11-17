@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { ZONES, type PublicUser } from "@entroworld/shared";
 import { Button, Card, Empty, ErrorText, Input, Spinner, StatusDot, UserAvatar } from "../../components/ui";
 import { errorMessage } from "../../lib/api";
+import { useVoiceManager, useVoiceState } from "../voice/VoiceContext";
 import { AppShell, timeAgo } from "./AppShell";
 import { useFriendRequests, useFriends, useSocialAction, useUserSearch } from "./hooks";
 import styles from "./Social.module.css";
@@ -32,6 +33,8 @@ export default function FriendsPage() {
   const search = useUserSearch(useDeferredValue(q));
   const online = friends.data?.filter((f) => f.online) ?? [];
   const offline = friends.data?.filter((f) => !f.online) ?? [];
+  const voice = useVoiceManager();
+  const voiceState = useVoiceState(voice);
 
   const act = (method: "POST" | "DELETE", path: string, body?: unknown) =>
     action.mutate({ method, path, body }, { onSuccess: () => void requests.refetch() });
@@ -60,7 +63,14 @@ export default function FriendsPage() {
                     `@${f.username}`
                   )
                 }
-              />
+              >
+                {/* Calls need both people in the city (the voice session runs with the world). */}
+                {f.online && voice && voiceState.available && (
+                  <Button size="small" variant="ghost" disabled={voiceState.call !== null} onClick={() => void voice.call(f)} aria-label={`Voice call ${f.displayName}`}>
+                    📞 Call
+                  </Button>
+                )}
+              </Person>
             ))}
           </div>
         </Card>

@@ -31,5 +31,15 @@ services:
       timeout: 3s
       retries: 20
 
+  livekit:
+    # Voice (proximity voice and 1:1 calls). Development mode with a local-only key pair that matches
+    # LIVEKIT_API_KEY / LIVEKIT_API_SECRET in .env.example. Host networking keeps WebRTC media
+    # (UDP 7882, TCP 7881) simple; signalling is on 7880. Everything binds to 127.0.0.1.
+    image: livekit/livekit-server:v1.13.10
+    network_mode: host
+    command: ["--dev", "--bind", "127.0.0.1", "--node-ip", "127.0.0.1"]
+    environment:
+      LIVEKIT_KEYS: "entroworld-dev: entroworld-dev-livekit-secret-0123456789abcdef"
+
 volumes:
   postgres-data:

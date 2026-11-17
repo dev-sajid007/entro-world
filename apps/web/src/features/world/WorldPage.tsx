@@ -9,6 +9,7 @@ import { Composer, PostList } from "../social/Posts";
 import socialStyles from "../social/Social.module.css";
 import { shopQuery } from "../market/hooks";
 import { ShopPanel } from "../market/ShopPanel";
+import { VoiceControls } from "../voice/VoiceControls";
 import type { GameEngine } from "../../game/core/GameEngine";
 import { PanelHeader, type PanelRequest } from "./Hud";
 import { useWorldSession } from "./WorldSession";
@@ -72,7 +73,7 @@ function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () =>
   }, []);
 
   if (ui.status === "disconnected" && ui.error) return <WorldLoading text="" error={ui.error} onRetry={onRejoin} />;
-  return <WorldLayer engine={engine} hudVisible renderPanel={renderPanel} topRight={<HudNav />} />;
+  return <WorldLayer engine={engine} hudVisible renderPanel={renderPanel} topRight={<HudNav />} extras={<VoiceControls />} />;
 }
 
 /** The shopkeeper greets the player (in a speech bubble only they see) when they step up to the counter. */

@@ -35,6 +35,8 @@ export const ServerMessage = {
   /** The player walked up to a shop counter (entered its trigger area) or left it. */
   ShopEnter: "shop:enter",
   ShopLeave: "shop:leave",
+  /** A 1:1 voice call event (`CallEvent`). */
+  CallEvent: "call:event",
   Pong: "pong",
 } as const;
 

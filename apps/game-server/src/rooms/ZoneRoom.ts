@@ -728,6 +728,10 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     const command = parsed.data;
     for (const [sessionId, s] of [...this.sessions]) {
       if (s.claims.sub !== command.userId) continue;
+      if (command.type === "call") {
+        s.client?.send(ServerMessage.CallEvent, command.event);
+        continue;
+      }
       if (command.type === "avatar_changed") {
         void this.loadAvatar(s.claims).then((avatar) => {
           if (this.sessions.get(sessionId) === s) s.player.avatar = JSON.stringify(avatar);

@@ -1,9 +1,11 @@
 import { Callbacks, Client, type Room } from "@colyseus/sdk";
 import type { ZoneId } from "@entroworld/shared";
 import {
+  callEventSchema,
   ClientMessage,
   ServerMessage,
   ZONE_ROOM,
+  type CallEvent,
   type ChatBroadcast,
   type ChatChannel,
   type ErrorPayload,
@@ -41,6 +43,7 @@ export interface ZoneEvents extends Record<string, unknown> {
   transfer: ZoneTransferPayload;
   voiceToken: VoiceTokenPayload;
   voicePeers: VoicePeersPayload;
+  callEvent: CallEvent;
   propertyChanged: { plotId: string };
   eventUpdate: { eventId: string };
   /** Final leave (after reconnection attempts are exhausted or a consented leave). */
@@ -108,6 +111,10 @@ export class ZoneConnection extends Emitter<ZoneEvents> {
     room.onMessage(ServerMessage.ZoneTransfer, (m: ZoneTransferPayload) => this.emit("transfer", m));
     room.onMessage(ServerMessage.VoiceToken, (m: VoiceTokenPayload) => this.emit("voiceToken", m));
     room.onMessage(ServerMessage.VoicePeers, (m: VoicePeersPayload) => this.emit("voicePeers", m));
+    room.onMessage(ServerMessage.CallEvent, (m: unknown) => {
+      const parsed = callEventSchema.safeParse(m);
+      if (parsed.success) this.emit("callEvent", parsed.data);
+    });
     room.onMessage(ServerMessage.PropertyChanged, (m: { plotId: string }) => this.emit("propertyChanged", m));
     room.onMessage(ServerMessage.EventUpdate, (m: { eventId: string }) => this.emit("eventUpdate", m));
     room.onMessage(ServerMessage.ShopEnter, (m: ShopPresencePayload) => this.emit("shopEnter", m));
