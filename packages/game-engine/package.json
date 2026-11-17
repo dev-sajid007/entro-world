@@ -1,0 +1,15 @@
+{
+  "name": "@entroworld/game-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {"@dimforge/rapier3d-compat": "^0.21.0", "@entroworld/shared": "workspace:*", "@entroworld/game-protocol": "workspace:*", "@entroworld/world-assets": "workspace:*"},
+  "devDependencies": {}
+}

@@ -1,0 +1,363 @@
+/* App shell */
+.shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(ellipse at 10% 0%, rgba(56, 189, 248, 0.08), transparent 45%), var(--bg);
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 20px;
+  background: rgba(11, 17, 32, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--panel-border);
+}
+.logo {
+  font-weight: 800;
+  font-size: 19px;
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+.navLink {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.navLink:hover {
+  color: var(--text);
+  background: rgba(148, 163, 184, 0.1);
+  text-decoration: none;
+}
+.navActive {
+  color: var(--text);
+  background: rgba(56, 189, 248, 0.16);
+}
+.me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+}
+.content {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wide {
+  max-width: 980px;
+}
+.pageTitle {
+  margin: 4px 0 0;
+  font-size: 24px;
+}
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+.tab {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.tabActive {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+/* Posts */
+.post {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.postHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.postMeta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.name {
+  font-weight: 600;
+  color: var(--text);
+}
+.muted {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+.shared {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.5);
+}
+.location {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--panel-border);
+  padding-top: 8px;
+}
+.action {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.action:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text);
+}
+.actionOn {
+  color: var(--accent);
+}
+.menu {
+  position: relative;
+}
+.menuList {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+  min-width: 160px;
+  background: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.menuItem {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+.menuItem:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+.menuDanger {
+  color: var(--danger);
+}
+
+/* Composer and comments */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.spacer {
+  flex: 1;
+}
+.select {
+  background: var(--bg-elev);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 6px 10px;
+}
+.comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+.comment {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.commentBody {
+  flex: 1;
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 10px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+.commentBody p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Profile */
+.profileHead {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.profileHead h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.stats {
+  display: flex;
+  gap: 18px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.stats strong {
+  color: var(--text);
+}
+.online {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--success);
+}
+
+/* Lists */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+}
+.person:hover {
+  background: rgba(148, 163, 184, 0.06);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.sectionTitle {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+/* Avatar editor */
+.swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatchOn {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+.chipOn {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.14);
+}
+
+/* In-world board panel */
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  min-width: min(440px, 86vw);
+}
+
+/* HUD nav (inside the 3D view) */
+.hudNav {
+  display: flex;
+  gap: 6px;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: var(--shadow);
+}
+.hudLink {
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.hudLink:hover {
+  background: rgba(148, 163, 184, 0.16);
+  text-decoration: none;
+}

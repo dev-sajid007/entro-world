@@ -1,0 +1,29 @@
+{
+  "name": "entroworld",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev --filter=@entroworld/web --filter=@entroworld/api --filter=@entroworld/game-server",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @entroworld/database db:generate",
+    "db:migrate": "pnpm --filter @entroworld/database db:migrate",
+    "db:seed": "pnpm --filter @entroworld/database db:seed",
+    "setup": "node infra/scripts/setup.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.11",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
