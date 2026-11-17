@@ -357,6 +357,38 @@
   background: transparent;
   cursor: pointer;
 }
+.hudLinks {
+  display: flex;
+  gap: 6px;
+}
+.hudMenu {
+  display: none;
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 10px;
+}
+@media (max-width: 720px) {
+  .hudNav {
+    flex-direction: column;
+    align-items: flex-end;
+    border-radius: 18px;
+  }
+  .hudMenu {
+    display: block;
+  }
+  .hudLinks {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hudNav[data-open] .hudLinks {
+    display: flex;
+  }
+  .hudLinks .hudLink {
+    padding: 9px 16px;
+    text-align: left;
+  }
+}
 .hudLink:hover {
   background: rgba(148, 163, 184, 0.16);
   text-decoration: none;

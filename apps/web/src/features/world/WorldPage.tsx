@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import type { WorldJoinResponse, ZoneId } from "@entroworld/shared";
@@ -103,20 +103,28 @@ function HudNav() {
     await logout();
     navigate("/", { replace: true });
   };
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
   return (
-    <nav className={socialStyles.hudNav} aria-label="Main">
-      <Link to="/feed" className={socialStyles.hudLink}>
-        Feed
-      </Link>
-      <Link to="/friends" className={socialStyles.hudLink}>
-        Friends
-      </Link>
-      <Link to={`/u/${me.username}`} className={socialStyles.hudLink}>
-        Profile
-      </Link>
-      <button className={socialStyles.hudLink} onClick={() => void signOut()}>
-        Sign out
+    <nav className={socialStyles.hudNav} data-open={open || undefined} aria-label="Main">
+      {/* On phones the links fold into a menu button. */}
+      <button className={`${socialStyles.hudLink} ${socialStyles.hudMenu}`} aria-expanded={open} aria-label="Menu" onClick={() => setOpen((o) => !o)}>
+        {open ? "✕" : "☰"}
       </button>
+      <div className={socialStyles.hudLinks}>
+        <Link to="/feed" className={socialStyles.hudLink} onClick={close}>
+          Feed
+        </Link>
+        <Link to="/friends" className={socialStyles.hudLink} onClick={close}>
+          Friends
+        </Link>
+        <Link to={`/u/${me.username}`} className={socialStyles.hudLink} onClick={close}>
+          Profile
+        </Link>
+        <button className={socialStyles.hudLink} onClick={() => void signOut()}>
+          Sign out
+        </button>
+      </div>
     </nav>
   );
 }

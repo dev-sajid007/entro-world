@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import { ZONES, ZONE_IDS, type ZoneId } from "@entroworld/shared";
 import { EMOTES } from "@entroworld/avatar";
 import { Buttons, type ChatChannel } from "@entroworld/game-protocol";
@@ -46,7 +46,8 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
     }
   });
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
-  const touch = useRef(typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches).current;
+  const touch = useTouchMode();
+  const [emotesOpen, setEmotesOpen] = useState(false);
 
   useEffect(() => {
     const offs = [
@@ -85,7 +86,7 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
   const closePanel = () => setPanel(null);
 
   return (
-    <div className={styles.hud}>
+    <div className={`${styles.hud} ${touch ? styles.touch : ""}`}>
       <div className={styles.topLeft}>
         <div className={styles.zoneCard}>
           <div className={styles.zoneName}>{ZONES[ui.zoneId].name}</div>
@@ -109,12 +110,12 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
 
       {ui.nearby && !panel && (
         <button className={styles.prompt} onClick={() => engine.interact()}>
-          <kbd>E</kbd> {promptText(engine, ui.nearby)}
+          {!touch && <kbd>E</kbd>} {promptText(engine, ui.nearby)}
         </button>
       )}
       {ui.seated && !panel && (
         <button className={styles.prompt} onClick={() => engine.standUp()}>
-          <kbd>E</kbd> Stand up
+          {!touch && <kbd>E</kbd>} Stand up
         </button>
       )}
 
@@ -129,24 +130,34 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
       </div>
 
       <div className={styles.bottomLeft}>
-        <ChatPanel engine={engine} />
+        <ChatPanel engine={engine} startCollapsed={touch} />
       </div>
 
       <div className={styles.bottomRight}>
         {extras}
+        {(!touch || emotesOpen) && (
         <div className={styles.emotes} role="toolbar" aria-label="Emotes">
           {EMOTES.map((e, i) => (
-            <button key={e} className={styles.emote} title={`${e} (${i + 1})`} onClick={() => engine.emote(e)}>
+            <button
+              key={e}
+              className={styles.emote}
+              title={`${e} (${i + 1})`}
+              onClick={() => {
+                engine.emote(e);
+                if (touch) setEmotesOpen(false);
+              }}
+            >
               <span aria-hidden>{EMOTE_ICONS[e]}</span>
               <span className="sr-only">{e}</span>
             </button>
           ))}
         </div>
+        )}
       </div>
 
-      {touch && <TouchControls engine={engine} />}
+      {touch && !panel && <TouchControls engine={engine} onEmotes={() => setEmotesOpen((o) => !o)} />}
 
-      {help && <HelpOverlay onClose={closeHelp} />}
+      {help && <HelpOverlay touch={touch} onClose={closeHelp} />}
 
       {panel && (
         <div className={styles.panelBackdrop} onClick={closePanel}>
@@ -241,11 +252,15 @@ const CHANNELS: { id: ChatChannel; label: string }[] = [
   { id: "global", label: "Global" },
 ];
 
-function ChatPanel({ engine }: { engine: GameEngine }) {
+function ChatPanel({ engine, startCollapsed = false }: { engine: GameEngine; startCollapsed?: boolean }) {
   const { entries } = useSyncExternalStore(engine.chat.subscribe, engine.chat.get);
   const [channel, setChannel] = useState<ChatChannel>("room");
   const [text, setText] = useState("");
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(startCollapsed);
+  // Touch mode can switch on after the first touch: fold the chat away then too.
+  useEffect(() => {
+    if (startCollapsed) setCollapsed(true);
+  }, [startCollapsed]);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -314,11 +329,22 @@ function ChatPanel({ engine }: { engine: GameEngine }) {
   );
 }
 
-function HelpOverlay({ onClose }: { onClose: () => void }) {
+function HelpOverlay({ touch, onClose }: { touch: boolean; onClose: () => void }) {
   return (
     <div className={styles.panelBackdrop} onClick={onClose}>
       <div className={styles.panel} onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Controls">
         <PanelHeader title="Welcome to EntroWorld" subtitle="Explore the city, meet people and make it your own." onClose={onClose} />
+        {touch ? (
+          <div className={styles.helpGrid}>
+            <span><kbd>Left thumb</kbd></span><span>Touch and drag anywhere on the left to walk (push far to run)</span>
+            <span><kbd>Right thumb</kbd></span><span>Drag on the right to look around, pinch to zoom</span>
+            <span><kbd>Jump</kbd></span><span>Jump</span>
+            <span><kbd>Run</kbd></span><span>Toggle running</span>
+            <span><kbd>Use</kbd></span><span>Interact: sit, read boards, use kiosks, talk to shopkeepers</span>
+            <span><kbd>Chat</kbd></span><span>Open the chat</span>
+            <span><kbd>😊</kbd></span><span>Emotes</span>
+          </div>
+        ) : (
         <div className={styles.helpGrid}>
           <span><kbd>W A S D</kbd></span><span>Move</span>
           <span><kbd>Shift</kbd></span><span>Run</span>
@@ -331,6 +357,7 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
           <span><kbd>V</kbd></span><span>Toggle proximity voice</span>
           <span><kbd>H</kbd></span><span>Show this help</span>
         </div>
+        )}
         <button className={styles.primary} onClick={onClose}>
           Start exploring
         </button>
@@ -339,80 +366,173 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function TouchControls({ engine }: { engine: GameEngine }) {
-  const stick = useRef<HTMLDivElement>(null);
-  const knob = useRef<HTMLDivElement>(null);
-  const active = useRef<number | null>(null);
-  const look = useRef<{ id: number; x: number; y: number } | null>(null);
+/**
+ * Touch mode turns on for coarse pointers (phones, tablets) and also the first time the screen is
+ * actually touched, so devices that misreport their pointer (or DevTools device emulation switched
+ * on after load) still get on-screen controls.
+ */
+function useTouchMode(): boolean {
+  const query = "(pointer: coarse), (any-pointer: coarse)";
+  const [touch, setTouch] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    if (touch) return;
+    const media = window.matchMedia?.(query);
+    const on = () => setTouch(true);
+    const onChange = () => {
+      if (media?.matches) on();
+    };
+    media?.addEventListener("change", onChange);
+    window.addEventListener("touchstart", on, { once: true, passive: true });
+    return () => {
+      media?.removeEventListener("change", onChange);
+      window.removeEventListener("touchstart", on);
+    };
+  }, [touch]);
+  return touch;
+}
 
+/** Radius (px) the joystick knob can travel from the stick's center. */
+const STICK_RADIUS = 52;
+
+function TouchControls({ engine, onEmotes }: { engine: GameEngine; onEmotes: () => void }) {
+  const base = useRef<HTMLDivElement>(null);
+  const knob = useRef<HTMLDivElement>(null);
+  const stick = useRef<{ id: number; x: number; y: number } | null>(null);
+  const looks = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<number | null>(null);
+  const [running, setRunning] = useState(false);
+
+  // Release everything if the controls unmount mid-touch (panel opened, page left).
+  useEffect(
+    () => () => {
+      engine.input.setJoystick(0, 0);
+      engine.input.setVirtualButton(Buttons.Jump, false);
+      engine.input.setVirtualButton(Buttons.Sprint, false);
+    },
+    [engine],
+  );
+
+  useEffect(() => {
+    engine.input.setVirtualButton(Buttons.Sprint, running);
+  }, [engine, running]);
+
+  const placeStick = (x: number, y: number) => {
+    if (base.current) {
+      base.current.style.left = `${x}px`;
+      base.current.style.top = `${y}px`;
+      base.current.dataset.active = "true";
+    }
+  };
   const moveStick = (clientX: number, clientY: number) => {
-    const el = stick.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    let dx = (clientX - cx) / (r.width / 2);
-    let dy = (clientY - cy) / (r.height / 2);
+    const s = stick.current;
+    if (!s) return;
+    let dx = (clientX - s.x) / STICK_RADIUS;
+    let dy = (clientY - s.y) / STICK_RADIUS;
     const len = Math.hypot(dx, dy);
     if (len > 1) {
       dx /= len;
       dy /= len;
     }
     engine.input.setJoystick(dx, dy);
-    if (knob.current) knob.current.style.transform = `translate(${dx * 38}px, ${dy * 38}px)`;
+    if (knob.current) knob.current.style.transform = `translate(${dx * STICK_RADIUS}px, ${dy * STICK_RADIUS}px)`;
   };
+  const releaseStick = (e: ReactTouchEvent) => {
+    if (!stick.current || !Array.from(e.changedTouches).some((t) => t.identifier === stick.current!.id)) return;
+    stick.current = null;
+    engine.input.setJoystick(0, 0);
+    if (knob.current) knob.current.style.transform = "";
+    if (base.current) {
+      base.current.style.left = "";
+      base.current.style.top = "";
+      delete base.current.dataset.active;
+    }
+  };
+
+  const pinchDistance = () => {
+    const [a, b] = [...looks.current.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : null;
+  };
+  const endLook = (e: ReactTouchEvent) => {
+    for (const t of Array.from(e.changedTouches)) looks.current.delete(t.identifier);
+    pinch.current = pinchDistance();
+  };
+
+  const hold = (button: number) => ({
+    // React registers touchstart as passive, so CSS (touch-action, user-select) stops scrolling and callouts.
+    onTouchStart: () => engine.input.setVirtualButton(button, true),
+    onTouchEnd: () => engine.input.setVirtualButton(button, false),
+    onTouchCancel: () => engine.input.setVirtualButton(button, false),
+  });
+  const tap = (action: () => void) => ({
+    onTouchEnd: (e: ReactTouchEvent) => {
+      e.preventDefault();
+      action();
+    },
+    onClick: action,
+  });
 
   return (
     <>
       <div
         className={styles.lookArea}
         onTouchStart={(e) => {
-          const t = e.changedTouches[0];
-          if (t) look.current = { id: t.identifier, x: t.clientX, y: t.clientY };
+          for (const t of Array.from(e.changedTouches)) looks.current.set(t.identifier, { x: t.clientX, y: t.clientY });
+          pinch.current = pinchDistance();
         }}
         onTouchMove={(e) => {
-          for (const t of Array.from(e.changedTouches)) {
-            if (look.current && t.identifier === look.current.id) {
-              engine.input.addLook((t.clientX - look.current.x) * 1.6, (t.clientY - look.current.y) * 1.6);
-              look.current = { id: t.identifier, x: t.clientX, y: t.clientY };
+          const moved = Array.from(e.changedTouches).filter((t) => looks.current.has(t.identifier));
+          if (looks.current.size >= 2) {
+            for (const t of moved) looks.current.set(t.identifier, { x: t.clientX, y: t.clientY });
+            const d = pinchDistance();
+            if (d !== null && pinch.current !== null && Math.abs(d - pinch.current) > 12) {
+              engine.input.addZoom(d > pinch.current ? -1 : 1);
+              pinch.current = d;
             }
+            return;
+          }
+          for (const t of moved) {
+            const prev = looks.current.get(t.identifier)!;
+            engine.input.addLook((t.clientX - prev.x) * 1.6, (t.clientY - prev.y) * 1.6);
+            looks.current.set(t.identifier, { x: t.clientX, y: t.clientY });
           }
         }}
-        onTouchEnd={() => (look.current = null)}
+        onTouchEnd={endLook}
+        onTouchCancel={endLook}
       />
       <div
-        ref={stick}
-        className={styles.stick}
+        className={styles.moveArea}
         onTouchStart={(e) => {
           const t = e.changedTouches[0];
-          if (!t) return;
-          active.current = t.identifier;
+          if (!t || stick.current) return;
+          stick.current = { id: t.identifier, x: t.clientX, y: t.clientY };
+          placeStick(t.clientX, t.clientY);
           moveStick(t.clientX, t.clientY);
         }}
         onTouchMove={(e) => {
-          for (const t of Array.from(e.changedTouches)) if (t.identifier === active.current) moveStick(t.clientX, t.clientY);
+          for (const t of Array.from(e.changedTouches)) if (t.identifier === stick.current?.id) moveStick(t.clientX, t.clientY);
         }}
-        onTouchEnd={() => {
-          active.current = null;
-          engine.input.setJoystick(0, 0);
-          if (knob.current) knob.current.style.transform = "";
-        }}
+        onTouchEnd={releaseStick}
+        onTouchCancel={releaseStick}
       >
-        <div ref={knob} className={styles.knob} />
+        <div ref={base} className={styles.stick} aria-hidden>
+          <div ref={knob} className={styles.knob} />
+        </div>
       </div>
-      <div className={styles.touchButtons}>
-        <button
-          className={styles.touchButton}
-          onTouchStart={() => engine.input.setVirtualButton(Buttons.Jump, true)}
-          onTouchEnd={() => engine.input.setVirtualButton(Buttons.Jump, false)}
-        >
+      <div className={styles.touchButtons} role="toolbar" aria-label="Touch controls">
+        <button className={`${styles.touchButton} ${styles.touchJump}`} aria-label="Jump" {...hold(Buttons.Jump)}>
           Jump
         </button>
-        <button className={styles.touchButton} onClick={() => engine.interact()}>
+        <button className={styles.touchButton} aria-pressed={running} data-on={running || undefined} {...tap(() => setRunning((r) => !r))}>
+          Run
+        </button>
+        <button className={styles.touchButton} {...tap(() => engine.interact())}>
           Use
         </button>
-        <button className={styles.touchButton} onClick={() => engine.events.emit("chatFocus", undefined)}>
+        <button className={styles.touchButton} {...tap(() => engine.events.emit("chatFocus", undefined))}>
           Chat
+        </button>
+        <button className={styles.touchButton} aria-label="Emotes" {...tap(onEmotes)}>
+          😊
         </button>
       </div>
     </>
