@@ -1,4 +1,5 @@
 import { createDatabase } from "../client";
+import { seedAcademy } from "../academy-seed";
 import { seedMarket } from "../market-seed";
 import { seedWorld } from "../repositories";
 import { databaseUrl } from "./env";
@@ -7,7 +8,8 @@ const { db, close } = createDatabase(databaseUrl, { max: 1, applicationName: "en
 try {
   const worldId = await seedWorld(db);
   await seedMarket(db);
-  console.log(`Seeded world ${worldId}, its zones and AI Agent Street.`);
+  await seedAcademy(db);
+  console.log(`Seeded world ${worldId}, its zones, AI Agent Street and the Coding Academy.`);
 } finally {
   await close();
 }

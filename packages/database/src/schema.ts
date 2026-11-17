@@ -30,6 +30,7 @@ import type {
   WorldLocation,
   ZoneId,
 } from "@entroworld/shared";
+import type { BadgeCriteria, EditorMode, LessonContent, LessonStatus, PuzzleDefinition, TrackLevel } from "@entroworld/robot-api";
 
 // Conventions: UUID primary keys, timestamptz everywhere, soft deletion via `deleted_at` where
 // content may need to be restored or audited. Enumerations are varchar + CHECK constraints so new
@@ -60,6 +61,9 @@ export const AGENT_SENDER_TYPES = ["user", "agent", "system"] as const;
 export type AgentSenderRowType = (typeof AGENT_SENDER_TYPES)[number];
 export const MODERATION_STATUSES = ["ok", "flagged", "blocked"] as const;
 export type ModerationRowStatus = (typeof MODERATION_STATUSES)[number];
+export const TRACK_LEVELS = ["beginner", "intermediate", "advanced"] as const satisfies readonly TrackLevel[];
+export const LESSON_STATUSES = ["not_started", "in_progress", "completed"] as const satisfies readonly LessonStatus[];
+export const EDITOR_MODE_VALUES = ["blocks", "split", "code"] as const satisfies readonly EditorMode[];
 export const EMAIL_TOKEN_PURPOSES = ["verify_email"] as const;
 export type EmailTokenPurpose = (typeof EMAIL_TOKEN_PURPOSES)[number];
 
@@ -623,4 +627,116 @@ export const productReviews = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("product_reviews_unique").on(t.productId, t.userId), check("product_reviews_rating_check", sql`${t.rating} between 1 and 5`)],
+);
+
+// -------------------------------------------------------------------------------------------------
+// Coding Academy (SPEC-ADDENDUM-01 §5)
+// -------------------------------------------------------------------------------------------------
+
+export const learningTracks = pgTable(
+  "learning_tracks",
+  {
+    id: pk(),
+    slug: varchar("slug", { length: 60 }).notNull().unique(),
+    title: varchar("title", { length: 120 }).notNull(),
+    description: text("description").notNull().default(""),
+    level: varchar("level", { length: 16 }).$type<TrackLevel>().notNull(),
+    orderIndex: integer("order_index").notNull().default(0),
+    isPublished: boolean("is_published").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [check("learning_tracks_level_check", oneOf(t.level, TRACK_LEVELS))],
+);
+
+export const lessons = pgTable(
+  "lessons",
+  {
+    id: pk(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => learningTracks.id, { onDelete: "cascade" }),
+    slug: varchar("slug", { length: 60 }).notNull(),
+    title: varchar("title", { length: 120 }).notNull(),
+    content: jsonb("content").$type<LessonContent>().notNull(),
+    puzzleDefinition: jsonb("puzzle_definition").$type<PuzzleDefinition>().notNull(),
+    xpReward: integer("xp_reward").notNull().default(0),
+    orderIndex: integer("order_index").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("lessons_track_slug_idx").on(t.trackId, t.slug),
+    index("lessons_track_order_idx").on(t.trackId, t.orderIndex),
+    check("lessons_xp_reward_check", sql`${t.xpReward} >= 0`),
+  ],
+);
+
+export const lessonProgress = pgTable(
+  "lesson_progress",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lessonId: uuid("lesson_id")
+      .notNull()
+      .references(() => lessons.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).$type<LessonStatus>().notNull().default("not_started"),
+    attempts: integer("attempts").notNull().default(0),
+    bestActionCount: integer("best_action_count"),
+    /** User-controlled draft (Blockly workspace JSON or source code). */
+    lastCode: text("last_code"),
+    lastEditorMode: varchar("last_editor_mode", { length: 8 }).$type<EditorMode>(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("lesson_progress_user_lesson_idx").on(t.userId, t.lessonId),
+    index("lesson_progress_lesson_idx").on(t.lessonId, t.status),
+    check("lesson_progress_status_check", oneOf(t.status, LESSON_STATUSES)),
+    check("lesson_progress_editor_mode_check", sql`${t.lastEditorMode} is null or ${oneOf(t.lastEditorMode, EDITOR_MODE_VALUES)}`),
+  ],
+);
+
+export const badges = pgTable("badges", {
+  id: pk(),
+  slug: varchar("slug", { length: 60 }).notNull().unique(),
+  name: varchar("name", { length: 80 }).notNull(),
+  description: text("description").notNull().default(""),
+  iconUrl: text("icon_url"),
+  criteria: jsonb("criteria").$type<BadgeCriteria>().notNull(),
+  createdAt: createdAt(),
+});
+
+export const userBadges = pgTable(
+  "user_badges",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    badgeId: uuid("badge_id")
+      .notNull()
+      .references(() => badges.id, { onDelete: "cascade" }),
+    awardedAt: timestamp("awarded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_badges_unique").on(t.userId, t.badgeId)],
+);
+
+export const userLearningStats = pgTable(
+  "user_learning_stats",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    totalXp: integer("total_xp").notNull().default(0),
+    level: integer("level").notNull().default(1),
+    currentStreak: integer("current_streak").notNull().default(0),
+    longestStreak: integer("longest_streak").notNull().default(0),
+    /** UTC day of the last successful attempt. */
+    lastActivityDate: date("last_activity_date"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("user_learning_stats_xp_idx").on(t.totalXp.desc()), check("user_learning_stats_xp_check", sql`${t.totalXp} >= 0`)],
 );

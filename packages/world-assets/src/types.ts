@@ -62,7 +62,7 @@ export interface Prop {
   color?: string | undefined;
 }
 
-export type InteractiveKind = "seat" | "board" | "kiosk" | "fountain" | "screen" | "plotSign" | "shopkeeper";
+export type InteractiveKind = "seat" | "board" | "kiosk" | "fountain" | "screen" | "plotSign" | "shopkeeper" | "academyLab";
 
 export interface InteractiveObject {
   id: string;
@@ -162,6 +162,26 @@ export interface MarketShop {
   trigger: { x: number; z: number; radius: number };
 }
 
+/**
+ * The Coding Academy's puzzle lab: a walk-in room whose floor holds the robot puzzle board. The
+ * open front faces local -Z rotated by `rotation`; local +Z runs from the console toward the back.
+ */
+export interface AcademyLab {
+  zoneId: ZoneId;
+  chunk: string;
+  x: number;
+  z: number;
+  rotation: number;
+  width: number;
+  depth: number;
+  height: number;
+  wall: number;
+  /** World-space center of the puzzle board and the edge length of one tile. */
+  board: { x: number; z: number; tile: number };
+  /** The console players use to open the Academy panel. */
+  console: { x: number; z: number; rotation: number };
+}
+
 export interface Chunk {
   key: string;
   rect: Rect;
@@ -192,6 +212,7 @@ export interface CityLayout {
   plots: Plot[];
   venues: Venue[];
   shops: MarketShop[];
+  academy: AcademyLab;
   water: WaterBody[];
   colliders: Collider[];
 }

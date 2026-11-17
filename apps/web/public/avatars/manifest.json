@@ -1,0 +1,85 @@
+{
+  "version": "3c4b6ed924",
+  "bodies": {
+    "masculine": {
+      "file": "body-masculine.glb",
+      "browWidth": 0.1247
+    },
+    "feminine": {
+      "file": "body-feminine.glb",
+      "browWidth": 0.126
+    }
+  },
+  "hair": {
+    "buzz": {
+      "file": "hair-buzz.glb",
+      "fits": "masculine"
+    },
+    "buzz-f": {
+      "file": "hair-buzz-f.glb",
+      "fits": "feminine"
+    },
+    "short": {
+      "file": "hair-short.glb",
+      "fits": "masculine"
+    },
+    "long": {
+      "file": "hair-long.glb",
+      "fits": "feminine"
+    },
+    "buns": {
+      "file": "hair-buns.glb",
+      "fits": "feminine"
+    },
+    "beard": {
+      "file": "hair-beard.glb",
+      "fits": "masculine"
+    }
+  },
+  "clips": {
+    "Dance_Loop": {
+      "speed": 0,
+      "duration": 1
+    },
+    "Idle_Loop": {
+      "speed": 0,
+      "duration": 2.5
+    },
+    "Idle_Talking_Loop": {
+      "speed": 0,
+      "duration": 2.933
+    },
+    "Interact": {
+      "speed": 0,
+      "duration": 2
+    },
+    "Jog_Fwd_Loop": {
+      "speed": 5.357,
+      "duration": 0.933
+    },
+    "Jump_Land": {
+      "speed": 0,
+      "duration": 1.267
+    },
+    "Jump_Loop": {
+      "speed": 0,
+      "duration": 2.5
+    },
+    "Jump_Start": {
+      "speed": 0,
+      "duration": 1.333
+    },
+    "Sitting_Idle_Loop": {
+      "speed": 0,
+      "duration": 1.667
+    },
+    "Sitting_Talking_Loop": {
+      "speed": 0,
+      "duration": 2.933
+    },
+    "Walk_Loop": {
+      "speed": 0.975,
+      "duration": 1.333
+    }
+  }
+}

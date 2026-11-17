@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import {
   ACCESSORIES,
   ACCESSORY_SLOTS,
+  BODY_SHAPES,
   BODY_TYPES,
   BOTTOMS,
   CLOTHING_COLORS,
@@ -14,6 +15,7 @@ import {
   TOPS,
   avatarConfigSchema,
   generateAvatar,
+  resolveBodyShape,
   type CatalogOption,
 } from "@entroworld/avatar";
 import { LIMITS, type AvatarConfig, type PrivacySetting } from "@entroworld/shared";
@@ -169,6 +171,12 @@ function AvatarEditor() {
         </div>
         <span className={styles.muted}>Changes appear in the city as soon as you save, even if you're already there.</span>
         <Field label="Body">
+          <Chips
+            label="Body shape"
+            options={BODY_SHAPES}
+            value={resolveBodyShape(draft)}
+            onChange={(bodyShape) => set({ appearance: { bodyShape } })}
+          />
           <Chips label="Body type" options={BODY_TYPES} value={draft.appearance.bodyType} onChange={(bodyType) => set({ appearance: { bodyType } })} />
         </Field>
         <Field label="Skin tone">

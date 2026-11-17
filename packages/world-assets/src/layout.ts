@@ -22,7 +22,7 @@ import type {
  * from fixed constants and the seeded PRNG only.
  */
 
-export const LAYOUT_VERSION = 2;
+export const LAYOUT_VERSION = 3;
 export const CITY_SEED = 20_260_101;
 
 /** The original 3x2 district grid. */
@@ -32,7 +32,9 @@ const CORE_BOUNDS: Rect = { minX: -248, maxX: 248, minZ: -168, maxZ: 168 };
  * the rest of the city stays exactly as it was. The land south of it is sea.
  */
 export const MARKET_ANNEX: Rect = { minX: -328, maxX: -248, minZ: -168, maxZ: 0 };
-/** Walkable map bounds (the island is L-shaped; seawalls block the corner outside it). */
+/** The Coding Academy campus: the annex south of AI Agent Street, west of the Residential Area. */
+export const ACADEMY_ANNEX: Rect = { minX: -328, maxX: -248, minZ: 0, maxZ: 168 };
+/** Walkable map bounds (with both annexes the island is a full rectangle). */
 export const MAP_BOUNDS: Rect = { minX: MARKET_ANNEX.minX, maxX: CORE_BOUNDS.maxX, minZ: CORE_BOUNDS.minZ, maxZ: CORE_BOUNDS.maxZ };
 /** Vertical (constant-x) and horizontal (constant-z) street lines. */
 export const X_LINES = [-160, -80, 0, 80, 160] as const;
@@ -54,6 +56,7 @@ const ZONE_BOUNDS: Record<ZoneId, Rect> = {
   "zone-park": { minX: -80, maxX: 80, minZ: 0, maxZ: 168 },
   "zone-beach": { minX: 80, maxX: 248, minZ: 0, maxZ: 168 },
   "zone-market": MARKET_ANNEX,
+  "zone-academy": ACADEMY_ANNEX,
 };
 
 type LineKind = "road" | "pedestrian" | "park" | "sand";
@@ -86,7 +89,7 @@ const sideSurface: Record<LineKind, SurfaceKind> = {
 };
 
 export function zoneAt(x: number, z: number): ZoneId {
-  if (x < CORE_BOUNDS.minX) return "zone-market";
+  if (x < CORE_BOUNDS.minX) return z < 0 ? "zone-market" : "zone-academy";
   const col = x < -80 ? 0 : x < 80 ? 1 : 2;
   const row = z < 0 ? 0 : 1;
   const grid: ZoneId[][] = [
@@ -99,7 +102,7 @@ export function zoneAt(x: number, z: number): ZoneId {
 export function chunkKeyAt(x: number, z: number): string {
   let iz = 0;
   while (iz < Z_EDGES.length - 2 && z >= Z_EDGES[iz + 1]!) iz++;
-  if (x < CORE_BOUNDS.minX) return `a0_${Math.min(iz, ANNEX_CHUNK_ROWS - 1)}`;
+  if (x < CORE_BOUNDS.minX) return z < 0 ? `a0_${Math.min(iz, ANNEX_CHUNK_ROWS - 1)}` : `a1_${Math.min(Math.max(iz - ANNEX_CHUNK_ROWS, 0), ANNEX_CHUNK_ROWS - 1)}`;
   let ix = 0;
   while (ix < X_EDGES.length - 2 && x >= X_EDGES[ix + 1]!) ix++;
   return `c${ix}_${iz}`;
@@ -457,6 +460,7 @@ const SHOP_NAMES: Record<ZoneId, string[]> = {
   "zone-park": [],
   "zone-residential": [],
   "zone-market": [],
+  "zone-academy": [],
 };
 
 function businessCell(b: LayoutBuilder, c: Cell): void {
@@ -887,14 +891,10 @@ function beachCell(b: LayoutBuilder, c: Cell): void {
 function boundaries(b: LayoutBuilder): void {
   const H = 3;
   const { minX, maxX, minZ, maxZ } = MAP_BOUNDS;
-  const annex = MARKET_ANNEX;
-  // West, north and south seawalls (players cannot leave the island). The west side steps in
-  // where the AI Agent Street annex ends.
-  b.wall("west", minX - 1, minX, minZ - 1, annex.maxZ + 1, H);
-  b.wall("annex-south", minX - 1, CORE_BOUNDS.minX, annex.maxZ, annex.maxZ + 1, H);
-  b.wall("west-south", CORE_BOUNDS.minX - 1, CORE_BOUNDS.minX, annex.maxZ, maxZ + 1, H);
+  // West, north and south seawalls (players cannot leave the island).
+  b.wall("west", minX - 1, minX, minZ - 1, maxZ + 1, H);
   b.wall("north", minX - 1, maxX + 1, minZ - 1, minZ, H);
-  b.wall("south", CORE_BOUNDS.minX - 1, maxX + 1, maxZ, maxZ + 1, H);
+  b.wall("south", minX - 1, maxX + 1, maxZ, maxZ + 1, H);
   // East: seawall next to the event zone, and the shoreline in the beach zone.
   b.wall("east", maxX, maxX + 1, minZ - 1, 1, H);
   b.wall("shore", SHORELINE_X, SHORELINE_X + 1, -1, maxZ + 1, H);
@@ -913,6 +913,8 @@ function buildZones(): ZoneLayout[] {
     { id: "zone-event", name: ZONES["zone-event"].name, bounds: ZONE_BOUNDS["zone-event"], spawn: spawn(120, -40, 0), ambience: "event" },
     // At the street gate, looking across the boulevard into Code Corner.
     { id: "zone-market", name: ZONES["zone-market"].name, bounds: ZONE_BOUNDS["zone-market"], spawn: spawn(-272, -80, Math.PI / 2), ambience: "urban" },
+    // On the campus walkway, facing the Puzzle Lab.
+    { id: "zone-academy", name: ZONES["zone-academy"].name, bounds: ZONE_BOUNDS["zone-academy"], spawn: spawn(-268, 80, Math.PI / 2), ambience: "plaza" },
   ];
 }
 
@@ -946,6 +948,7 @@ export function generateCityLayout(seed = CITY_SEED): CityLayout {
   centralPlaza(b);
   // Generated last, with its own random stream, so the original districts are unaffected.
   const shops = agentStreet(new LayoutBuilderView(b, createRng(seed ^ 0x5eed_a1)));
+  const academy = academyCampus(new LayoutBuilderView(b, createRng(seed ^ 0xac_ade)));
   boundaries(b);
   // Business district kiosk and board near the spawn point.
   b.interactive({ id: "kiosk:business", kind: "kiosk", x: -166, y: 0, z: -46, rotation: 0, radius: 3, label: "City transit kiosk" });
@@ -955,6 +958,11 @@ export function generateCityLayout(seed = CITY_SEED): CityLayout {
   for (let i = 0; i < ANNEX_CHUNK_ROWS; i++) {
     const rect: Rect = { ...MARKET_ANNEX, minZ: Z_EDGES[i]!, maxZ: Math.min(Z_EDGES[i + 1]!, MARKET_ANNEX.maxZ) };
     chunks.push({ key: `a0_${i}`, rect, zoneId: "zone-market" });
+  }
+  for (let i = 0; i < ANNEX_CHUNK_ROWS; i++) {
+    const z0 = Z_EDGES[i + ANNEX_CHUNK_ROWS]!;
+    const rect: Rect = { ...ACADEMY_ANNEX, minZ: Math.max(z0, ACADEMY_ANNEX.minZ), maxZ: Math.min(Z_EDGES[i + ANNEX_CHUNK_ROWS + 1]!, ACADEMY_ANNEX.maxZ) };
+    chunks.push({ key: `a1_${i}`, rect, zoneId: "zone-academy" });
   }
   return {
     version: LAYOUT_VERSION,
@@ -970,6 +978,7 @@ export function generateCityLayout(seed = CITY_SEED): CityLayout {
     plots: b.plots,
     venues: b.venues,
     shops,
+    academy,
     water: b.water,
     colliders: b.colliders,
   };
@@ -1119,6 +1128,115 @@ function agentStreet(view: LayoutBuilderView): MarketShop[] {
   b.interactive({ id: "board:market", kind: "board", x: -266, y: 0, z: -91, rotation: Math.PI / 2, radius: 3.5, label: "Agent Street board" });
   b.box(-266, 1.1, -91, 0.25, 1.1, 1.3, 0);
   return shops;
+}
+
+// -------------------------------------------------------------------------------------------------
+// Coding Academy (zone-academy)
+// -------------------------------------------------------------------------------------------------
+
+/** Puzzle lab room (local space: open front at -depth/2, console near it, board toward the back). */
+export const ACADEMY_LAB = {
+  width: 22,
+  depth: 20,
+  height: 6,
+  wall: 0.3,
+  /** Width of the doorway in the front wall. */
+  doorway: 6,
+  /** Local z of the puzzle board's center, and the edge of one tile (8 tiles fit across). */
+  boardZ: 2.6,
+  tile: 1.5,
+  /** Local z of the console and its interaction radius. */
+  consoleZ: -6.4,
+  consoleRadius: 3.4,
+} as const;
+
+/** Center line of the walkway from the Residential road (z = 80) to the lab. */
+const ACADEMY_WALK_Z = 80;
+
+function academyCampus(view: LayoutBuilderView): AcademyLab {
+  const { b, rng } = view;
+  const a = ACADEMY_ANNEX;
+  const L = ACADEMY_LAB;
+  const walk: Rect = { minX: a.minX + L.depth + 4, maxX: a.maxX, minZ: ACADEMY_WALK_Z - 5, maxZ: ACADEMY_WALK_Z + 5 };
+  b.surface("grass", a, 0.02);
+  b.surface("plaza", walk, 0.03);
+  // A plaza in front of the lab, and paths north and south to the halls.
+  const forecourt: Rect = { minX: a.minX + L.depth + 2, maxX: a.minX + L.depth + 22, minZ: ACADEMY_WALK_Z - 14, maxZ: ACADEMY_WALK_Z + 14 };
+  b.surface("plaza", forecourt, 0.035);
+  b.surface("path", { minX: -282, maxX: -276, minZ: a.minZ + 30, maxZ: walk.minZ }, 0.03);
+  b.surface("path", { minX: -282, maxX: -276, minZ: walk.maxZ, maxZ: a.maxZ - 30 }, 0.03);
+
+  // Puzzle lab on the west side, its open front facing east (+x) onto the forecourt.
+  const rotation = -Math.PI / 2;
+  const x = round(a.minX + 2 + L.depth / 2);
+  const z = ACADEMY_WALK_Z;
+  const local = (lx: number, lz: number) => {
+    const [dx, dz] = rotY(lx, lz, rotation);
+    return { x: round(x + dx), z: round(z + dz) };
+  };
+  const wallBox = (lx: number, lz: number, hx: number, hz: number, hy: number) => {
+    const c = local(lx, lz);
+    b.box(c.x, hy, c.z, hz, hy, hx);
+  };
+  // Back and side walls; the front wall has a doorway in the middle.
+  wallBox(0, L.depth / 2 - L.wall / 2, L.width / 2, L.wall / 2, L.height / 2);
+  for (const side of [-1, 1]) {
+    wallBox(side * (L.width / 2 - L.wall / 2), 0, L.wall / 2, L.depth / 2, L.height / 2);
+    const segment = (L.width - L.doorway) / 2;
+    wallBox(side * (L.doorway / 2 + segment / 2), -L.depth / 2 + L.wall / 2, segment / 2, L.wall / 2, L.height / 2);
+  }
+  // The console: a small desk players walk up to.
+  const consolePos = local(0, L.consoleZ);
+  wallBox(0, L.consoleZ + 0.9, 0.8, 0.35, 0.55);
+  b.interactive({
+    id: "academy:lab",
+    kind: "academyLab",
+    x: consolePos.x,
+    y: 0,
+    z: consolePos.z,
+    rotation: round(rotation),
+    radius: L.consoleRadius,
+    label: "Puzzle Lab console",
+  });
+  const board = local(0, L.boardZ);
+
+  // Halls north and south of the walkway (closed for now: classrooms and the challenge arena).
+  b.building({ x: -279, z: 22, width: 34, depth: 22, height: 12, rotation: Math.PI, facade: "hall", color: "#b9c7d6", roof: "flat", sign: "Coding Academy" });
+  b.building({ x: -279, z: 140, width: 34, depth: 22, height: 10, rotation: 0, facade: "hall", color: "#c8bfd9", roof: "flat", sign: "Challenge Arena" });
+
+  // Street furniture along the walkway and around the forecourt.
+  for (let lx = walk.minX + 26; lx <= walk.maxX - 4; lx += 10) {
+    b.prop("lamp", lx, walk.minZ + 0.8, 0);
+    b.prop("lamp", lx + 5, walk.maxZ - 0.8, Math.PI);
+  }
+  for (const bx of [-286, -262]) {
+    b.prop("bench", bx, walk.minZ - 1.6, 0);
+    b.prop("bench", bx, walk.maxZ + 1.6, Math.PI);
+  }
+  b.prop("statue", forecourt.maxX - 4, ACADEMY_WALK_Z - 10, -Math.PI / 2);
+  b.prop("flowerbed", forecourt.maxX - 4, ACADEMY_WALK_Z + 10, 0);
+  const keepClear: Rect[] = [walk, forecourt, { minX: -284, maxX: -274, minZ: a.minZ, maxZ: a.maxZ }, { minX: -297, maxX: -261, minZ: a.minZ, maxZ: 36 }, { minX: -297, maxX: -261, minZ: 126, maxZ: a.maxZ }];
+  b.scatterWith(rng, "tree", { minX: a.minX + 3, maxX: a.maxX - 3, minZ: a.minZ + 4, maxZ: a.maxZ - 4 }, 16, [...keepClear, { minX: a.minX, maxX: a.minX + L.depth + 3, minZ: z - L.width / 2 - 2, maxZ: z + L.width / 2 + 2 }], 8);
+
+  // Transit kiosk and notice board where the walkway meets the city.
+  b.interactive({ id: "kiosk:academy", kind: "kiosk", x: -256, y: 0, z: 71, rotation: Math.PI / 2, radius: 3, label: "City transit kiosk" });
+  b.box(-256, 1.1, 71, 0.6, 1.1, 0.6, 0);
+  b.interactive({ id: "board:academy", kind: "board", x: -256, y: 0, z: 89, rotation: Math.PI / 2, radius: 3.5, label: "Academy board" });
+  b.box(-256, 1.1, 89, 0.25, 1.1, 1.3, 0);
+
+  return {
+    zoneId: zoneAt(x, z),
+    chunk: chunkKeyAt(x, z),
+    x,
+    z,
+    rotation: round(rotation),
+    width: L.width,
+    depth: L.depth,
+    height: L.height,
+    wall: L.wall,
+    board: { x: board.x, z: board.z, tile: L.tile },
+    console: { x: consolePos.x, z: consolePos.z, rotation: round(rotation) },
+  };
 }
 
 let cached: CityLayout | null = null;

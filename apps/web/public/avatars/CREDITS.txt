@@ -1,0 +1,4 @@
+Avatar models and animations by Quaternius (https://quaternius.com):
+- Universal Base Characters (Standard)
+- Universal Animation Library (Standard)
+License: CC0 1.0 (public domain). Converted with infra/scripts/build-avatars.mjs.

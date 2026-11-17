@@ -5,6 +5,7 @@ import {
   ACCESSORIES,
   ACCESSORY_SLOTS,
   AVATAR_MODEL_ID,
+  BODY_SHAPES,
   BODY_TYPES,
   BOTTOMS,
   CLOTHING_COLORS,
@@ -32,6 +33,7 @@ export const avatarConfigSchema = z
       hairStyle: oneOf(ids(HAIR_STYLES), "hair style"),
       hairColor: hexColor,
       bodyType: oneOf(ids(BODY_TYPES), "body type"),
+      bodyShape: oneOf(ids(BODY_SHAPES), "body shape").optional(),
     }),
     clothing: z.object({
       top: oneOf(ids(TOPS), "top"),
@@ -67,7 +69,7 @@ export function sanitizeAvatarConfig(input: unknown, seed = "default"): AvatarCo
 
 export const DEFAULT_AVATAR: AvatarConfig = {
   modelId: AVATAR_MODEL_ID,
-  appearance: { skinTone: "#d9a37f", hairStyle: "short", hairColor: "#3b2a20", bodyType: "regular" },
+  appearance: { skinTone: "#d9a37f", hairStyle: "short", hairColor: "#3b2a20", bodyType: "regular", bodyShape: "masculine" },
   clothing: {
     top: "hoodie",
     bottom: "jeans",
@@ -79,10 +81,17 @@ export const DEFAULT_AVATAR: AvatarConfig = {
   accessories: [],
 };
 
+/** The body shape to render: the saved choice, or a stable pick for avatars saved without one. */
+export function resolveBodyShape(config: AvatarConfig): "masculine" | "feminine" {
+  const shape = config.appearance.bodyShape;
+  if (shape === "masculine" || shape === "feminine") return shape;
+  return hashString(JSON.stringify(config)) % 2 === 0 ? "masculine" : "feminine";
+}
+
 /** Deterministic avatar generated from a seed (e.g. the username) so new users look distinct. */
 export function generateAvatar(seed: string): AvatarConfig {
   const rng = createRng(hashString(seed));
-  return {
+  const avatar: AvatarConfig = {
     modelId: AVATAR_MODEL_ID,
     appearance: {
       skinTone: pick(rng, SKIN_TONES),
@@ -100,4 +109,7 @@ export function generateAvatar(seed: string): AvatarConfig {
     },
     accessories: rng() > 0.6 ? [pick(rng, ["glasses", "cap", "headphones", "backpack"])] : [],
   };
+  // Picked last so avatars generated before body shapes existed keep their other features.
+  avatar.appearance.bodyShape = pick(rng, ids(BODY_SHAPES));
+  return avatar;
 }

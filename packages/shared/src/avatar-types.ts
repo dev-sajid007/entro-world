@@ -18,6 +18,8 @@ export interface AvatarConfig {
     hairStyle: string;
     hairColor: string;
     bodyType: string;
+    /** "masculine" | "feminine"; missing in avatars saved before realistic bodies existed. */
+    bodyShape?: string;
   };
 
   clothing: {

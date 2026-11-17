@@ -10,6 +10,7 @@ import { PresenceReader } from "./lib/presence";
 import { AccessTokens, GameTickets } from "./lib/tokens";
 import { authRoutes } from "./modules/auth/routes";
 import { callRoutes } from "./modules/calls/routes";
+import { academyRoutes } from "./modules/academy/routes";
 import { friendRoutes } from "./modules/friends/routes";
 import { marketRoutes } from "./modules/market/routes";
 import { postRoutes } from "./modules/posts/routes";
@@ -104,6 +105,7 @@ export async function buildApp(deps: AppDeps, options: BuildOptions = {}): Promi
       await api.register(worldRoutes, { prefix: "/worlds" });
       await api.register(marketRoutes, { prefix: "/market" });
       await api.register(callRoutes, { prefix: "/calls" });
+      await api.register(academyRoutes, { prefix: "/academy" });
     },
     { prefix: API_PREFIX },
   );

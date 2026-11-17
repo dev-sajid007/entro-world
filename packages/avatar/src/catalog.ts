@@ -25,6 +25,12 @@ export const BODY_TYPES: readonly CatalogOption[] = [
   { id: "broad", label: "Broad" },
 ];
 
+/** Which base body the realistic avatar uses. Optional in saved configs (older avatars lack it). */
+export const BODY_SHAPES: readonly CatalogOption[] = [
+  { id: "masculine", label: "Masculine" },
+  { id: "feminine", label: "Feminine" },
+];
+
 export const HAIR_STYLES: readonly CatalogOption[] = [
   { id: "bald", label: "Bald" },
   { id: "buzz", label: "Buzz cut" },
