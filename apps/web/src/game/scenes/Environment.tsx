@@ -10,7 +10,7 @@ import { SURFACE_TILE } from "../assets/textures";
 /** Late-afternoon sun direction. */
 export const SUN_DIRECTION = new THREE.Vector3(-0.55, 0.62, 0.35).normalize();
 
-export function Atmosphere({ engine, shadows }: { engine: GameEngine; shadows: boolean }) {
+export function Atmosphere({ engine, shadows, shadowMapSize = 2048 }: { engine: GameEngine; shadows: boolean; shadowMapSize?: number }) {
   const light = useRef<THREE.DirectionalLight>(null);
   const target = useMemo(() => new THREE.Object3D(), []);
   const sunPosition = useMemo(() => SUN_DIRECTION.clone().multiplyScalar(400).toArray() as [number, number, number], []);
@@ -19,7 +19,7 @@ export function Atmosphere({ engine, shadows }: { engine: GameEngine; shadows: b
     const l = light.current;
     if (!l) return;
     // The shadow camera follows the player; snapping to texels avoids shimmering edges.
-    const texel = 140 / 2048;
+    const texel = 140 / shadowMapSize;
     const fx = Math.round(engine.focus.x / texel) * texel;
     const fz = Math.round(engine.focus.z / texel) * texel;
     target.position.set(fx, 0, fz);
@@ -32,23 +32,24 @@ export function Atmosphere({ engine, shadows }: { engine: GameEngine; shadows: b
       <color attach="background" args={["#b9cfe0"]} />
       <fog attach="fog" args={["#c6d5e0", 160, 720]} />
       <Sky distance={4500} sunPosition={sunPosition} turbidity={5.5} rayleigh={1.4} mieCoefficient={0.004} mieDirectionalG={0.82} />
-      <DreiEnvironment resolution={256} frames={1}>
+      {/* Sky light is kept moderate so sunlit and shaded areas read clearly (strong IBL washes shadows out). */}
+      <DreiEnvironment resolution={256} frames={1} environmentIntensity={0.4}>
         <Sky distance={4500} sunPosition={sunPosition} turbidity={5.5} rayleigh={1.4} mieCoefficient={0.004} mieDirectionalG={0.82} />
         <mesh position={[0, -40, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[2000, 2000]} />
           <meshBasicMaterial color="#7d8a7a" />
         </mesh>
       </DreiEnvironment>
-      <hemisphereLight args={["#dbe8f5", "#7a6f5d", 0.55]} />
-      <ambientLight intensity={0.12} />
+      <hemisphereLight args={["#dbe8f5", "#7a6f5d", 0.28]} />
       <primitive object={target} />
       <directionalLight
         ref={light}
         color="#fff1dc"
-        intensity={2.6}
+        intensity={3}
         target={target}
         castShadow={shadows}
-        shadow-mapSize={[2048, 2048]}
+        key={shadowMapSize}
+        shadow-mapSize={[shadowMapSize, shadowMapSize]}
         shadow-camera-left={-70}
         shadow-camera-right={70}
         shadow-camera-top={70}
@@ -57,6 +58,8 @@ export function Atmosphere({ engine, shadows }: { engine: GameEngine; shadows: b
         shadow-camera-far={400}
         shadow-bias={-0.0004}
         shadow-normalBias={0.05}
+        shadow-radius={3}
+        shadow-blurSamples={12}
       />
     </>
   );

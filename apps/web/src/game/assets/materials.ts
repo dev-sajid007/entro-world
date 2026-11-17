@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import type { FacadeStyle, SurfaceKind } from "@entroworld/world-assets";
-import { FACADE_SPECS, SURFACE_TILE, facadeTextures, roofTexture, surfaceTexture, waterNormalTexture } from "./textures";
+import { FACADE_SPECS, SURFACE_TILE, facadeTextures, normalMapFrom, roofTexture, surfaceTexture, waterNormalTexture } from "./textures";
+
+/** Surface relief per material (0 = flat). */
+const SURFACE_RELIEF: Partial<Record<SurfaceKind, number>> = { asphalt: 1.4, sidewalk: 2.2, plaza: 2.2, concrete: 1.6, path: 1.6, grass: 1.2, sand: 0.8, wetsand: 0.5 };
+const FACADE_RELIEF: Record<FacadeStyle, number> = { glass: 0.6, office: 1.2, brick: 3, stucco: 1.4, shop: 1.4, hall: 0.8, house: 1.8 };
 
 /** Shared materials. Created lazily once per page and reused by every chunk. */
 const materials = new Map<string, THREE.Material>();
@@ -20,6 +24,8 @@ export function facadeMaterial(style: FacadeStyle): THREE.MeshStandardMaterial {
     return new THREE.MeshStandardMaterial({
       map,
       roughnessMap,
+      normalMap: normalMapFrom(map, FACADE_RELIEF[style]),
+      normalScale: new THREE.Vector2(0.8, 0.8),
       roughness: spec.roughness + 0.25,
       metalness: spec.metalness,
       vertexColors: true,
@@ -29,7 +35,10 @@ export function facadeMaterial(style: FacadeStyle): THREE.MeshStandardMaterial {
 }
 
 export function roofMaterial(): THREE.MeshStandardMaterial {
-  return memo("roof", () => new THREE.MeshStandardMaterial({ map: roofTexture(), roughness: 0.95, metalness: 0, vertexColors: true }));
+  return memo("roof", () => {
+    const map = roofTexture();
+    return new THREE.MeshStandardMaterial({ map, normalMap: normalMapFrom(map, 1.5), roughness: 0.95, metalness: 0, vertexColors: true });
+  });
 }
 
 export function signMaterial(texture: THREE.Texture): THREE.MeshStandardMaterial {
@@ -42,7 +51,16 @@ export function surfaceMaterial(kind: SurfaceKind): THREE.MeshStandardMaterial {
   return memo(`surface:${kind}`, () => {
     const map = surfaceTexture(kind);
     const roughness = kind === "asphalt" ? 0.92 : kind === "wetsand" ? 0.55 : 0.95;
-    const m = new THREE.MeshStandardMaterial({ map, roughness, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    const relief = SURFACE_RELIEF[kind] ?? 0;
+    const m = new THREE.MeshStandardMaterial({
+      map,
+      roughness,
+      metalness: 0,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      ...(relief > 0 ? { normalMap: normalMapFrom(map, relief), normalScale: new THREE.Vector2(0.9, 0.9) } : {}),
+    });
     m.userData.tile = SURFACE_TILE[kind];
     return m;
   });

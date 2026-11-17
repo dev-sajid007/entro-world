@@ -481,3 +481,47 @@ export function wrapText(text: string, maxChars: number, maxLines = 3): string[]
   }
   return lines;
 }
+
+/**
+ * Derives a tangent-space normal map from a canvas texture's brightness (dark = recessed): mortar
+ * lines, paving joints, cracks and window frames pick up real light and shadow. Tileable when the
+ * source tiles. `strength` scales the slopes.
+ */
+export function normalMapFrom(source: THREE.Texture, strength: number): THREE.Texture {
+  const key = `normal:${source.uuid}:${strength}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const img = source.image as HTMLCanvasElement;
+  const w = img.width;
+  const h = img.height;
+  const src = img.getContext("2d")!.getImageData(0, 0, w, h).data;
+  const height = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) height[i] = (0.299 * src[i * 4]! + 0.587 * src[i * 4 + 1]! + 0.114 * src[i * 4 + 2]!) / 255;
+  const at = (x: number, y: number) => height[((y + h) % h) * w + ((x + w) % w)]!;
+  const [c, ctx] = canvas(w, h);
+  const out = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // Sobel gradient with wrap-around.
+      const dx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
+      const dy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
+      let nx = -dx * strength;
+      let ny = dy * strength;
+      let nz = 1;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len;
+      ny /= len;
+      nz /= len;
+      const o = (y * w + x) * 4;
+      out.data[o] = (nx * 0.5 + 0.5) * 255;
+      out.data[o + 1] = (ny * 0.5 + 0.5) * 255;
+      out.data[o + 2] = (nz * 0.5 + 0.5) * 255;
+      out.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+  const tex = finish(c, { srgb: false, repeat: source.wrapS === THREE.RepeatWrapping });
+  tex.repeat.copy(source.repeat);
+  cache.set(key, tex);
+  return tex;
+}

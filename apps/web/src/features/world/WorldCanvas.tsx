@@ -8,6 +8,7 @@ import { Atmosphere, Island, RoadMarkings, Surfaces } from "../../game/scenes/En
 import { ChunkLayer } from "../../game/scenes/ChunkLayer";
 import { Interactives, type ScreenContent } from "../../game/scenes/Interactives";
 import { Plots } from "../../game/scenes/Plots";
+import { PostEffects, chosenQuality, initialQuality, type GraphicsQuality } from "../../game/scenes/PostEffects";
 
 /** Drives the engine from the render loop. One frame hook for the whole game. */
 function EngineLoop({ engine }: { engine: GameEngine }) {
@@ -26,28 +27,50 @@ export interface WorldCanvasProps {
   screen: ScreenContent;
 }
 
+interface Graphics {
+  quality: GraphicsQuality;
+  dpr: number;
+  shadowMapSize: 2048 | 1024;
+  shadows: boolean;
+}
+
+const MAX_DPR = () => Math.min(window.devicePixelRatio, 1.75);
+
+/**
+ * Steps graphics down one notch when the frame rate drops, cheapest-to-lose first: post-processing,
+ * extra resolution on high-DPI screens, shadow detail, sub-native resolution, and only then shadows.
+ */
+function degrade(g: Graphics): Graphics {
+  if (g.quality === "high" && chosenQuality() !== "high") return { ...g, quality: "low" };
+  if (g.dpr > 1) return { ...g, dpr: Math.max(1, g.dpr - 0.25) };
+  if (g.shadowMapSize === 2048) return { ...g, shadowMapSize: 1024 };
+  if (g.dpr > 0.75) return { ...g, dpr: 0.75 };
+  return { ...g, shadows: false };
+}
+
+/** The reverse, when there's headroom again (post-processing stays off to avoid flip-flopping). */
+function improve(g: Graphics): Graphics {
+  if (!g.shadows) return { ...g, shadows: true };
+  if (g.dpr < 1) return { ...g, dpr: Math.min(1, MAX_DPR()) };
+  if (g.shadowMapSize === 1024) return { ...g, shadowMapSize: 2048 };
+  return { ...g, dpr: Math.min(MAX_DPR(), g.dpr + 0.25) };
+}
+
 export function WorldCanvas({ engine, properties, screen }: WorldCanvasProps) {
-  const [dpr, setDpr] = useState(() => Math.min(window.devicePixelRatio, 1.75));
-  const [shadows, setShadows] = useState(true);
+  const [gfx, setGfx] = useState<Graphics>(() => ({ quality: initialQuality(), dpr: MAX_DPR(), shadowMapSize: 2048, shadows: true }));
   return (
     <Canvas
       shadows={{ type: THREE.PCFShadowMap }}
-      dpr={dpr}
+      dpr={gfx.dpr}
       camera={{ fov: 62, near: 0.25, far: 1800, position: [0, 6, 10] }}
       gl={{ antialias: true, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       style={{ position: "absolute", inset: 0, touchAction: "none" }}
       aria-label="3D world view"
     >
-      <PerformanceMonitor
-        onDecline={() => {
-          setDpr((d) => Math.max(0.75, d - 0.25));
-          if (dpr <= 1) setShadows(false);
-        }}
-        onIncline={() => setDpr((d) => Math.min(window.devicePixelRatio, 1.75, d + 0.25))}
-      />
+      <PerformanceMonitor onDecline={() => setGfx(degrade)} onIncline={() => setGfx(improve)} />
       <EngineLoop engine={engine} />
       <Suspense fallback={null}>
-        <Atmosphere engine={engine} shadows={shadows} />
+        <Atmosphere engine={engine} shadows={gfx.shadows} shadowMapSize={gfx.shadowMapSize} />
       </Suspense>
       <Island />
       <Surfaces />
@@ -56,6 +79,7 @@ export function WorldCanvas({ engine, properties, screen }: WorldCanvasProps) {
       <Interactives engine={engine} screen={screen} />
       <Plots properties={properties} />
       <primitive object={engine.root} />
+      <PostEffects quality={gfx.quality} />
     </Canvas>
   );
 }
