@@ -75,6 +75,7 @@ const CLIPS = [
   "Idle_Loop",
   "Walk_Loop",
   "Jog_Fwd_Loop",
+  "Sprint_Loop",
   "Jump_Start",
   "Jump_Loop",
   "Jump_Land",

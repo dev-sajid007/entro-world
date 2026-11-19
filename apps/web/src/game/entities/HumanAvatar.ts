@@ -25,9 +25,6 @@ const HAIR_FOR_STYLE: Record<string, Partial<Record<BodyShape, string>> & { any?
   afro: { any: "buns" },
 };
 
-/** Ground speed the jog clip is animated for (m/s). */
-const JOG_SPEED = 4;
-
 const BODY_WIDTH: Record<string, number> = { slim: 0.93, regular: 1, broad: 1.08 };
 
 /** Average skin color of the light body textures (measured); skin tones are expressed relative to it. */
@@ -423,13 +420,14 @@ export class HumanAvatar {
     switch (state) {
       case "WALKING":
       case "RUNNING": {
-        // A plain walk for walking and a light jog for running (the sprint clip is too dramatic).
-        // The game's walk is brisk (4.4 m/s), so the walk plays faster than its natural pace.
+        // A plain walk for walking and a real run for running: the run clip is animated for about
+        // the game's run speed (8.25 vs 8.4 m/s), so it plays at its natural pace and the feet
+        // don't slide. The game's walk is brisk (4.4 m/s), so the walk plays faster than its natural pace.
         const run = state === "RUNNING";
-        const name = run ? "Jog_Fwd_Loop" : "Walk_Loop";
+        const name = run ? "Sprint_Loop" : "Walk_Loop";
         const action = this.play(name, 0.18);
-        const natural = run ? JOG_SPEED : (this.body.clipSpeed.get(name) ?? 1);
-        if (action) action.timeScale = THREE.MathUtils.clamp(Math.max(speed, 0.5) / natural, 0.7, run ? 2 : 2.2);
+        const natural = this.body.clipSpeed.get(name) ?? (run ? 8.25 : 1);
+        if (action) action.timeScale = THREE.MathUtils.clamp(Math.max(speed, 0.5) / natural, run ? 0.6 : 0.7, run ? 1.4 : 2.2);
         break;
       }
       case "JUMPING":

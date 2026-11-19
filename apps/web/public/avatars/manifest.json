@@ -1,5 +1,5 @@
 {
-  "version": "3c4b6ed924",
+  "version": "20d2f9a471",
   "bodies": {
     "masculine": {
       "file": "body-masculine.glb",
@@ -76,6 +76,10 @@
     "Sitting_Talking_Loop": {
       "speed": 0,
       "duration": 2.933
+    },
+    "Sprint_Loop": {
+      "speed": 8.25,
+      "duration": 0.667
     },
     "Walk_Loop": {
       "speed": 0.975,
