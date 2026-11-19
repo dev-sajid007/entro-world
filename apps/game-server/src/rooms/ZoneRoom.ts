@@ -11,7 +11,11 @@ import {
   ONLINE_TTL_SECONDS,
   ServerMessage,
   USER_CONTROL_CHANNEL,
+  CLASS_CODE_MAX,
+  CLASS_STATUS_MAX,
   chatMessageSchema,
+  classStartSchema,
+  classUpdateSchema,
   emoteMessageSchema,
   inputMessageSchema,
   interactMessageSchema,
@@ -21,6 +25,7 @@ import {
   userControlSchema,
   voiceStateSchema,
   type ChatBroadcast,
+  type ClassScreenContent,
   type ErrorPayload,
   type GameTicketClaims,
   type WelcomePayload,
@@ -33,7 +38,7 @@ import { ObjectState, PlayerState, ZoneState } from "../schemas/ZoneState";
 import { services } from "../services";
 import { InterestManager } from "../systems/InterestManager";
 import { StrikeCounter, createActionLimits, type ActionLimits, type TokenBucket } from "../systems/RateLimiter";
-import { ChatHistory, chatTopics, isChatBroadcast, sanitizeChatText } from "../systems/chat";
+import { ChatHistory, chatTopics, isChatBroadcast, sanitizeChatText, sanitizeMultiline } from "../systems/chat";
 import { Shopkeepers } from "../systems/shopkeepers";
 import { computeVoicePeers } from "../systems/voice";
 import { TicketError, presenceReplayGuard } from "../tickets";
@@ -129,7 +134,7 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     this.state.zoneId = this.zoneId;
 
     for (const o of interactivesInZone(this.zoneId)) {
-      if (o.kind !== "seat" && o.kind !== "fountain") continue;
+      if (o.kind !== "seat" && o.kind !== "fountain" && o.kind !== "screen") continue;
       const obj = new ObjectState();
       obj.id = o.id;
       obj.kind = o.kind;
@@ -447,6 +452,16 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
 
     this.handle(ClientMessage.Stand, voidSchema, (s) => this.standUp(s));
 
+    this.handle(ClientMessage.ClassStart, classStartSchema, (s, m) => this.startClass(s, m.screenId, m.title));
+    this.handle(ClientMessage.ClassUpdate, classUpdateSchema, (s, m) => {
+      const screen = this.presentingOn(s);
+      if (!screen) return this.sendError(s, { code: "not_presenting", message: "You're not presenting on a screen." });
+      if (!this.allow(s, s.limits.classUpdate)) return;
+      const content = JSON.parse(screen.value) as ClassScreenContent;
+      screen.value = JSON.stringify({ ...content, code: sanitizeMultiline(m.code, CLASS_CODE_MAX), status: sanitizeChatText(m.status).slice(0, CLASS_STATUS_MAX) });
+    });
+    this.handle(ClientMessage.ClassEnd, voidSchema, (s) => this.endClass(s));
+
     this.handle(ClientMessage.Travel, travelMessageSchema, (s, m) => {
       if (s.transfer || !this.allow(s, s.limits.travel, "The transit system needs a moment.")) return;
       const kiosk = this.reachable(s, m.kioskId);
@@ -586,6 +601,51 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
     s.player.seatId = "";
   }
 
+  /** Live classes: a signed-in player standing in front of a free screen takes it over. */
+  private startClass(s: Session, screenId: string, title: string): void {
+    if (s.transfer || !this.allow(s, s.limits.interact)) return;
+    if (s.claims.guest) return this.sendError(s, { code: "guest", message: "Sign in to present a class." });
+    const target = this.reachable(s, screenId);
+    if (!target) return;
+    const screen = this.state.objects.get(target.id);
+    if (target.kind !== "screen" || !screen) return this.sendError(s, { code: "not_screen", message: "You can't present on that." });
+    const sessionId = s.client!.sessionId;
+    if (screen.occupant && screen.occupant !== sessionId) return this.sendError(s, { code: "screen_busy", message: "Someone is already presenting on this screen." });
+    // One screen per presenter.
+    const current = this.presentingOn(s);
+    if (current && current !== screen) this.freeScreen(current);
+    const cleanTitle = sanitizeChatText(title);
+    if (!cleanTitle) return this.sendError(s, { code: "invalid_title", message: "Give your class a title." });
+    const content: ClassScreenContent = {
+      presenterId: s.claims.sub,
+      presenterName: s.claims.displayName,
+      title: cleanTitle,
+      code: "",
+      status: "",
+      startedAt: Date.now(),
+    };
+    screen.occupant = sessionId;
+    screen.value = JSON.stringify(content);
+    this.log.info("class started", { screenId, userId: s.claims.sub });
+  }
+
+  private endClass(s: Session): void {
+    const screen = this.presentingOn(s);
+    if (screen) this.freeScreen(screen);
+  }
+
+  private presentingOn(s: Session): ObjectState | undefined {
+    const sessionId = s.client?.sessionId ?? [...this.sessions].find(([, other]) => other === s)?.[0];
+    if (!sessionId) return undefined;
+    for (const o of this.state.objects.values()) if (o.kind === "screen" && o.occupant === sessionId) return o;
+    return undefined;
+  }
+
+  private freeScreen(screen: ObjectState): void {
+    screen.occupant = "";
+    screen.value = "";
+  }
+
   private toggleFountain(fountain: InteractiveObject): void {
     const now = Date.now();
     if ((this.fountainCooldown.get(fountain.id) ?? 0) > now) return;
@@ -634,6 +694,7 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
       const obj = this.state.objects.get(s.player.seatId);
       if (obj && obj.occupant === sessionId) obj.occupant = "";
     }
+    for (const o of this.state.objects.values()) if (o.kind === "screen" && o.occupant === sessionId) this.freeScreen(o);
     s.sim.dispose();
     this.shopkeepers.forget(sessionId);
     this.sessions.delete(sessionId);
@@ -730,6 +791,10 @@ export class ZoneRoom extends Room<{ state: ZoneState; metadata: ZoneRoomMetadat
       if (s.claims.sub !== command.userId) continue;
       if (command.type === "call") {
         s.client?.send(ServerMessage.CallEvent, command.event);
+        continue;
+      }
+      if (command.type === "academy_invite") {
+        s.client?.send(ServerMessage.AcademyInvite, command.invite);
         continue;
       }
       if (command.type === "avatar_changed") {

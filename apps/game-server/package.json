@@ -21,6 +21,8 @@
     "@entroworld/database": "workspace:*",
     "@entroworld/game-engine": "workspace:*",
     "@entroworld/game-protocol": "workspace:*",
+    "@entroworld/puzzle-engine": "workspace:*",
+    "@entroworld/robot-api": "workspace:*",
     "@entroworld/shared": "workspace:*",
     "@entroworld/world-assets": "workspace:*",
     "drizzle-orm": "^0.45.4",

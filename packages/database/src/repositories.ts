@@ -2,7 +2,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { generateAvatar, sanitizeAvatarConfig } from "@entroworld/avatar";
 import { ZONES, ZONE_IDS, type AvatarConfig, type ZoneId } from "@entroworld/shared";
 import type { DbExecutor } from "./client";
-import { aiAgents, avatars, marketShops, userWorldState, worldInstances, worldZones, worlds } from "./schema";
+import type { PuzzleDefinition } from "@entroworld/robot-api";
+import { aiAgents, avatars, learningTracks, lessons, marketShops, userWorldState, worldInstances, worldZones, worlds } from "./schema";
 
 // Small data-access helpers shared by the API and the game server.
 
@@ -109,4 +110,21 @@ export async function listShopkeepers(db: DbExecutor, zoneId: ZoneId): Promise<S
     .innerJoin(marketShops, eq(marketShops.id, aiAgents.shopId))
     .where(and(eq(marketShops.zoneId, zoneId), eq(marketShops.status, "active"), eq(aiAgents.isActive, true)));
   return rows.map((r) => ({ agentId: r.agentId, shopSlug: r.shopSlug, name: r.name, avatarSeed: r.persona.avatarSeed }));
+}
+
+export interface LessonPuzzleRecord {
+  lessonId: string;
+  title: string;
+  puzzle: PuzzleDefinition;
+}
+
+/** A lesson's puzzle (published tracks only), for game-server rooms that replay action logs. */
+export async function getLessonPuzzle(db: DbExecutor, lessonId: string): Promise<LessonPuzzleRecord | null> {
+  const [row] = await db
+    .select({ lessonId: lessons.id, title: lessons.title, puzzle: lessons.puzzleDefinition })
+    .from(lessons)
+    .innerJoin(learningTracks, eq(learningTracks.id, lessons.trackId))
+    .where(and(eq(lessons.id, lessonId), eq(learningTracks.isPublished, true)))
+    .limit(1);
+  return row ?? null;
 }

@@ -11,6 +11,8 @@ export interface BlockEditorHandle {
   serialize(): string;
   /** Clears the workspace back to the start block. */
   clear(): void;
+  /** Replaces the workspace with a serialized one (a pair partner's edit). Doesn't call `onChange`. */
+  load(serialized: string): void;
 }
 
 interface Props {
@@ -55,6 +57,8 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
   const workspace = useRef<Blockly.WorkspaceSvg | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  /** True while applying a remote workspace, so it isn't reported as a local edit. */
+  const applying = useRef(false);
 
   useEffect(() => {
     const el = host.current;
@@ -91,7 +95,7 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
 
     ws.addChangeListener(Blockly.Events.disableOrphans);
     ws.addChangeListener((e) => {
-      if (e.isUiEvent || ws.isDragging()) return;
+      if (e.isUiEvent || ws.isDragging() || applying.current) return;
       onChangeRef.current(countBlocks(ws));
     });
     onChangeRef.current(countBlocks(ws));
@@ -117,6 +121,27 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
         if (!ws) return;
         ws.clear();
         addStartBlock(ws);
+      },
+      load: (serialized) => {
+        const ws = workspace.current;
+        if (!ws) return;
+        applying.current = true;
+        try {
+          Blockly.Events.disable();
+          Blockly.serialization.workspaces.load(JSON.parse(serialized) as object, ws);
+          if (ws.getBlocksByType(START_BLOCK, false).length !== 1) {
+            ws.clear();
+            addStartBlock(ws);
+          }
+          ws.getBlocksByType(START_BLOCK, false).forEach((b) => b.setDeletable(false));
+        } catch {
+          // A malformed workspace from the partner leaves ours as it was.
+        } finally {
+          Blockly.Events.enable();
+          applying.current = false;
+        }
+        // Greyed-out loose blocks keep that state: it is part of the serialized workspace.
+        onChangeRef.current(countBlocks(ws));
       },
     }),
     [],

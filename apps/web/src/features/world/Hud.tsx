@@ -17,6 +17,8 @@ const STATUS_LABEL: Record<string, { text: string; color: string }> = {
 
 const EMOTE_ICONS: Record<string, string> = { wave: "👋", dance: "💃", cheer: "🙌", clap: "👏", laugh: "😂", think: "🤔", shrug: "🤷", bow: "🙇" };
 
+const SIDE_PANELS: ReadonlySet<InteractiveKind> = new Set(["academyLab", "screen"]);
+
 export interface PanelRequest {
   kind: InteractiveKind;
   object: InteractiveObject;
@@ -160,10 +162,10 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
       {help && <HelpOverlay touch={touch} onClose={closeHelp} />}
 
       {panel && (
-        // The Academy console docks to the side without dimming, so the puzzle board stays in view.
-        <div className={`${styles.panelBackdrop} ${panel.kind === "academyLab" ? styles.sideBackdrop : ""}`} onClick={closePanel}>
+        // Coding panels dock to the side without dimming, so the puzzle board or class screen stays in view.
+        <div className={`${styles.panelBackdrop} ${SIDE_PANELS.has(panel.kind) ? styles.sideBackdrop : ""}`} onClick={closePanel}>
           <div
-            className={`${styles.panel} ${panel.kind === "academyLab" ? styles.sidePanel : ""}`}
+            className={`${styles.panel} ${SIDE_PANELS.has(panel.kind) ? styles.sidePanel : ""}`}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-label={panel.object.label}

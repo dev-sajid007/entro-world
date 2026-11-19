@@ -15,6 +15,11 @@ export function sanitizeChatText(text: string): string {
   return text.replace(UNSAFE, "").replace(/\s+/g, " ").trim().slice(0, LIMITS.chatMessage.max);
 }
 
+/** Normalizes multi-line text (code on a class screen): keeps line breaks, drops unsafe characters. */
+export function sanitizeMultiline(text: string, max: number): string {
+  return text.replace(/\r\n?/g, "\n").replace(UNSAFE, "").replace(/\t/g, "  ").slice(0, max);
+}
+
 /** Recent chat kept per room so players joining (or switching zones) see the conversation. */
 export class ChatHistory {
   private entries: ChatBroadcast[] = [];

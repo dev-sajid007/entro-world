@@ -17,6 +17,10 @@ export const ClientMessage = {
   VoiceState: "voice:state",
   AvatarRefresh: "avatar:refresh",
   Travel: "travel",
+  /** Live classes: take over an Event Center screen, update what it shows, hand it back. */
+  ClassStart: "class:start",
+  ClassUpdate: "class:update",
+  ClassEnd: "class:end",
   Ping: "ping",
 } as const;
 
@@ -37,6 +41,8 @@ export const ServerMessage = {
   ShopLeave: "shop:leave",
   /** A 1:1 voice call event (`CallEvent`). */
   CallEvent: "call:event",
+  /** A friend invited you to an Academy session (`AcademyInvite`). */
+  AcademyInvite: "academy:invite",
   Pong: "pong",
 } as const;
 
@@ -147,4 +153,50 @@ export interface ErrorPayload {
 
 export interface SystemPayload {
   text: string;
+}
+
+// -------------------------------------------------------------------------------------------------
+// Live classes (SPEC-ADDENDUM-01 §3.3): a presenter shows their program on an Event Center screen.
+// The screen's ObjectState holds the presenter's session id in `occupant` and a JSON-encoded
+// `ClassScreenContent` in `value` ("" while the screen is free).
+// -------------------------------------------------------------------------------------------------
+
+export const CLASS_TITLE_MAX = 80;
+export const CLASS_CODE_MAX = 4000;
+export const CLASS_STATUS_MAX = 160;
+
+export const classStartSchema = z.object({ screenId: z.string().min(1).max(80), title: z.string().trim().min(1).max(CLASS_TITLE_MAX) }).strict();
+export const classUpdateSchema = z
+  .object({
+    code: z.string().max(CLASS_CODE_MAX),
+    /** One line under the code, e.g. the last run's result. */
+    status: z.string().max(CLASS_STATUS_MAX),
+  })
+  .strict();
+
+export interface ClassScreenContent {
+  presenterId: string;
+  presenterName: string;
+  title: string;
+  code: string;
+  status: string;
+  startedAt: number;
+}
+
+export function parseClassScreen(value: string): ClassScreenContent | null {
+  if (!value) return null;
+  try {
+    const v = JSON.parse(value) as Partial<ClassScreenContent>;
+    if (typeof v.presenterId !== "string" || typeof v.title !== "string" || typeof v.code !== "string") return null;
+    return {
+      presenterId: v.presenterId,
+      presenterName: typeof v.presenterName === "string" ? v.presenterName : "",
+      title: v.title,
+      code: v.code,
+      status: typeof v.status === "string" ? v.status : "",
+      startedAt: typeof v.startedAt === "number" ? v.startedAt : 0,
+    };
+  } catch {
+    return null;
+  }
 }

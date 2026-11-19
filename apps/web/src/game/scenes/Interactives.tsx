@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { getCityLayout, type InteractiveObject } from "@entroworld/world-assets";
+import { parseClassScreen, type ClassScreenContent } from "@entroworld/game-protocol";
 import type { GameEngine } from "../core/GameEngine";
 import { labelTexture } from "../assets/textures";
 import { plainMaterial } from "../assets/materials";
@@ -126,7 +127,60 @@ export interface ScreenContent {
   subtitle: string;
 }
 
-function Screen({ o, content }: { o: InteractiveObject; content: ScreenContent }) {
+/** Screen canvas size: the same aspect as the screen plane (23.5 × 11.5 m). */
+const SCREEN_W = 1640;
+const SCREEN_H = 802;
+const CODE_LINES = 15;
+
+/** Draws a live class: title bar, the presenter's code (monospace, left-aligned) and a status line. */
+function classScreenTexture(c: ClassScreenContent): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = SCREEN_W;
+  canvas.height = SCREEN_H;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#0b1220";
+  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(0, 0, SCREEN_W, 110);
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#f8fafc";
+  ctx.font = "700 54px system-ui, sans-serif";
+  ctx.fillText(`📚 ${c.title}`, 40, 55, SCREEN_W - 560);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#93c5fd";
+  ctx.font = "600 36px system-ui, sans-serif";
+  ctx.fillText(`LIVE · ${c.presenterName}`, SCREEN_W - 40, 55, 500);
+  ctx.textAlign = "left";
+
+  const lines = c.code ? c.code.split("\n") : ["// The presenter hasn't written any code yet."];
+  const shown = lines.slice(0, CODE_LINES);
+  if (lines.length > CODE_LINES) shown[CODE_LINES - 1] = `// … ${lines.length - CODE_LINES + 1} more lines`;
+  ctx.font = "500 38px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  shown.forEach((line, i) => {
+    ctx.fillStyle = line.trimStart().startsWith("//") ? "#64748b" : "#e2e8f0";
+    ctx.fillText(line.length > 70 ? `${line.slice(0, 69)}…` : line, 48, 150 + i * 40);
+  });
+
+  if (c.status) {
+    ctx.fillStyle = "#14532d";
+    ctx.fillRect(0, SCREEN_H - 84, SCREEN_W, 84);
+    ctx.fillStyle = "#bbf7d0";
+    ctx.font = "600 38px system-ui, sans-serif";
+    ctx.fillText(c.status, 40, SCREEN_H - 42, SCREEN_W - 80);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function Screen({ o, content, engine }: { o: InteractiveObject; content: ScreenContent; engine: GameEngine }) {
+  useSyncExternalStore(engine.objectsVersion.subscribe, engine.objectsVersion.get);
+  const live = parseClassScreen(engine.objects.get(o.id)?.value ?? "");
+  const liveKey = live ? JSON.stringify(live) : "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const liveTexture = useMemo(() => (live ? classScreenTexture(live) : null), [liveKey]);
+  useEffect(() => () => liveTexture?.dispose(), [liveTexture]);
   const label = useLabel([content.title, content.subtitle], {
     font: "700 44px system-ui, sans-serif",
     color: "#f8fafc",
@@ -142,7 +196,14 @@ function Screen({ o, content }: { o: InteractiveObject; content: ScreenContent }
       </mesh>
       <mesh position={[0, 0, 0.0]}>
         <planeGeometry args={[23.5, 11.5]} />
-        <meshStandardMaterial map={label.texture} emissiveMap={label.texture} emissive="#ffffff" emissiveIntensity={0.9} toneMapped={false} />
+        <meshStandardMaterial
+          key={liveTexture ? "live" : "idle"}
+          map={liveTexture ?? label.texture}
+          emissiveMap={liveTexture ?? label.texture}
+          emissive="#ffffff"
+          emissiveIntensity={0.9}
+          toneMapped={false}
+        />
       </mesh>
     </group>
   );
@@ -162,7 +223,7 @@ export function Interactives({ engine, screen }: { engine: GameEngine; screen: S
           case "fountain":
             return <Fountain key={o.id} o={o} engine={engine} />;
           case "screen":
-            return <Screen key={o.id} o={o} content={screen} />;
+            return <Screen key={o.id} o={o} content={screen} engine={engine} />;
           default:
             return null;
         }

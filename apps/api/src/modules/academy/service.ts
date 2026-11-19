@@ -1,13 +1,17 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { badges, learningTracks, lessonProgress, lessons, userBadges, userLearningStats, type DbExecutor } from "@entroworld/database";
+import { academyXpEvents, badges, learningTracks, lessonProgress, lessons, profiles, userBadges, userLearningStats, users, type DbExecutor } from "@entroworld/database";
 import { replay } from "@entroworld/puzzle-engine";
 import {
+  LEADERBOARD_SIZE,
   levelForXp,
   levelProgress,
   nextStreak,
   type AcademyProgressView,
   type BadgeCriteria,
   type BadgeView,
+  type LeaderboardEntry,
+  type LeaderboardScope,
+  type LeaderboardView,
   type LearningStatsView,
   type LessonAttemptRequest,
   type LessonAttemptResponse,
@@ -19,6 +23,7 @@ import {
 } from "@entroworld/robot-api";
 import type { AppContext } from "../../context";
 import { notFound, tooManyRequests } from "../../lib/errors";
+import { friendsSql, notBlockedSql, visibleAccount } from "../social/relationships";
 
 type TrackRow = typeof learningTracks.$inferSelect;
 type LessonRow = typeof lessons.$inferSelect;
@@ -60,6 +65,14 @@ function statsView(s: StatsRow | undefined): LearningStatsView {
 }
 
 const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+/** Monday 00:00 UTC of the week containing `now`. Weekly leaderboards reset then. */
+export function weekStartUtc(now: Date): Date {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const sinceMonday = (start.getUTCDay() + 6) % 7;
+  start.setUTCDate(start.getUTCDate() - sinceMonday);
+  return start;
+}
 
 /**
  * Coding Academy (SPEC-ADDENDUM-01 §6). User code never reaches the server: clients submit the
@@ -210,7 +223,7 @@ export class AcademyService {
       if (result.failureReason) response.failureReason = result.failureReason;
       if (!result.success) return response;
 
-      await this.recordActivity(tx, userId, firstCompletion ? lesson.xpReward : 0);
+      await this.recordActivity(tx, userId, firstCompletion ? lesson.xpReward : 0, lessonId);
       if (firstCompletion) {
         response.xpAwarded = lesson.xpReward;
         response.badgesAwarded = await this.awardBadges(tx, userId);
@@ -220,7 +233,8 @@ export class AcademyService {
   }
 
   /** Adds XP and extends the daily streak (any solved puzzle counts as activity). */
-  private async recordActivity(tx: DbExecutor, userId: string, xp: number): Promise<void> {
+  private async recordActivity(tx: DbExecutor, userId: string, xp: number, lessonId: string): Promise<void> {
+    if (xp > 0) await tx.insert(academyXpEvents).values({ userId, xp, lessonId });
     await tx.insert(userLearningStats).values({ userId }).onConflictDoNothing();
     const [stats] = await tx.select().from(userLearningStats).where(eq(userLearningStats.userId, userId)).for("update");
     const today = todayUtc();
@@ -237,6 +251,72 @@ export class AcademyService {
         updatedAt: new Date(),
       })
       .where(eq(userLearningStats.userId, userId));
+  }
+
+  /**
+   * XP earned this week (Monday to Monday, UTC): the viewer and their friends, or everyone. Users
+   * either side has blocked are left out. Returns the top rows plus the viewer's own row.
+   */
+  async leaderboard(viewerId: string, scope: LeaderboardScope, now = new Date()): Promise<LeaderboardView> {
+    const start = weekStartUtc(now);
+    const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const inScope = scope === "friends" ? sql`(${academyXpEvents.userId} = ${viewerId} or ${friendsSql(viewerId, academyXpEvents.userId)})` : sql`true`;
+    const weekly = this.db.$with("weekly").as(
+      this.db
+        .select({
+          userId: academyXpEvents.userId,
+          xp: sql<number>`sum(${academyXpEvents.xp})::int`.as("xp"),
+          // Ties go to whoever got there first.
+          reachedAt: sql<Date>`max(${academyXpEvents.createdAt})`.as("reached_at"),
+        })
+        .from(academyXpEvents)
+        .innerJoin(users, eq(users.id, academyXpEvents.userId))
+        .where(and(sql`${academyXpEvents.createdAt} >= ${start.toISOString()}`, inScope, visibleAccount, notBlockedSql(viewerId, academyXpEvents.userId)))
+        .groupBy(academyXpEvents.userId),
+    );
+    const ranked = this.db.$with("ranked").as(
+      this.db
+        .with(weekly)
+        .select({
+          userId: weekly.userId,
+          xp: weekly.xp,
+          rank: sql<number>`rank() over (order by ${weekly.xp} desc)::int`.as("rank"),
+          position: sql<number>`row_number() over (order by ${weekly.xp} desc, ${weekly.reachedAt} asc)::int`.as("position"),
+        })
+        .from(weekly),
+    );
+    const rows = await this.db
+      .with(weekly, ranked)
+      .select({
+        userId: ranked.userId,
+        xp: ranked.xp,
+        rank: ranked.rank,
+        position: ranked.position,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: profiles.avatarUrl,
+        level: userLearningStats.level,
+      })
+      .from(ranked)
+      .innerJoin(users, eq(users.id, ranked.userId))
+      .leftJoin(profiles, eq(profiles.userId, ranked.userId))
+      .leftJoin(userLearningStats, eq(userLearningStats.userId, ranked.userId))
+      .where(sql`${ranked.position} <= ${LEADERBOARD_SIZE} or ${ranked.userId} = ${viewerId}`)
+      .orderBy(asc(ranked.position));
+    const entry = (r: (typeof rows)[number]): LeaderboardEntry => ({
+      rank: r.rank,
+      user: { id: r.userId, username: r.username, displayName: r.displayName, avatarUrl: r.avatarUrl ?? null },
+      weeklyXp: r.xp,
+      level: r.level ?? 1,
+    });
+    const mine = rows.find((r) => r.userId === viewerId);
+    return {
+      scope,
+      weekStart: start.toISOString(),
+      weekEnd: end.toISOString(),
+      entries: rows.filter((r) => r.position <= LEADERBOARD_SIZE).map(entry),
+      me: mine ? entry(mine) : null,
+    };
   }
 
   /** Grants every badge whose criteria are now met; returns the newly awarded slugs. */

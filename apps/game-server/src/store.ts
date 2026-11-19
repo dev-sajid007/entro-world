@@ -3,14 +3,16 @@ import {
   closeServerInstances,
   createDatabase,
   getAvatar,
+  getLessonPuzzle,
   listShopkeepers,
   saveWorldStates,
   upsertWorldInstance,
+  type LessonPuzzleRecord,
   type ShopkeeperRecord,
   type StoredWorldPosition,
 } from "@entroworld/database";
 
-export type { ShopkeeperRecord };
+export type { LessonPuzzleRecord, ShopkeeperRecord };
 import type { AvatarConfig, ZoneId } from "@entroworld/shared";
 import { getCityLayout } from "@entroworld/world-assets";
 
@@ -31,6 +33,8 @@ export interface WorldStore {
   recordInstance(instance: InstanceRecord): Promise<void>;
   /** AI shopkeepers open in a zone. */
   shopkeepers(zoneId: ZoneId): Promise<ShopkeeperRecord[]>;
+  /** A published lesson's puzzle (Academy sessions replay battle attempts against it). */
+  lessonPuzzle(lessonId: string): Promise<LessonPuzzleRecord | null>;
   /** Marks every instance of this server closed (startup after a crash). */
   closeServerInstances(serverId: string): Promise<void>;
   close(): Promise<void>;
@@ -43,6 +47,7 @@ export function databaseStore(url: string): WorldStore {
     savePositions: (rows) => saveWorldStates(db, rows),
     recordInstance: (instance) => upsertWorldInstance(db, instance),
     shopkeepers: (zoneId) => listShopkeepers(db, zoneId),
+    lessonPuzzle: (lessonId) => getLessonPuzzle(db, lessonId),
     closeServerInstances: (serverId) => closeServerInstances(db, serverId),
     close,
   };
@@ -58,12 +63,16 @@ export function memoryStore(): WorldStore & {
   avatars: Map<string, AvatarConfig>;
   /** Shopkeepers by shop slug (none unless a test adds them: there is no agent registry offline). */
   shops: Map<string, ShopkeeperRecord>;
+  /** Lesson puzzles by lesson id (tests add them). */
+  lessons: Map<string, LessonPuzzleRecord>;
 } {
   const positions = new Map<string, SavedPosition>();
   const instances = new Map<string, InstanceRecord>();
   const avatars = new Map<string, AvatarConfig>();
   const shops = new Map<string, ShopkeeperRecord>();
+  const lessons = new Map<string, LessonPuzzleRecord>();
   return {
+    lessons,
     positions,
     instances,
     avatars,
@@ -80,6 +89,9 @@ export function memoryStore(): WorldStore & {
     async shopkeepers(zoneId) {
       const slugs = new Set(getCityLayout().shops.filter((s) => s.zoneId === zoneId).map((s) => s.slug));
       return [...shops.values()].filter((s) => slugs.has(s.shopSlug));
+    },
+    async lessonPuzzle(lessonId) {
+      return lessons.get(lessonId) ?? null;
     },
     async closeServerInstances(serverId) {
       for (const i of instances.values()) if (i.serverId === serverId) Object.assign(i, { status: "closed", currentPlayers: 0 });

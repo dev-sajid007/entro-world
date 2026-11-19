@@ -35,6 +35,8 @@ export function createActionLimits(now: () => number = Date.now) {
     voiceState: new TokenBucket(20, 8, now),
     avatar: new TokenBucket(3, 0.05, now),
     ping: new TokenBucket(4, 1, now),
+    /** Live class screen updates (the presenter's editor sends them while they edit). */
+    classUpdate: new TokenBucket(6, 2, now),
   };
 }
 export type ActionLimits = ReturnType<typeof createActionLimits>;

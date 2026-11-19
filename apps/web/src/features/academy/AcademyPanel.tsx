@@ -1,31 +1,85 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SimEvent } from "@entroworld/puzzle-engine";
-import { MAX_ACTION_LOG, type LessonAttemptResponse, type LessonView, type TrackView } from "@entroworld/robot-api";
+import { MAX_ACTION_LOG, type LessonAttemptResponse, type LessonView, type SessionJoinResponse, type SessionKind, type TrackView } from "@entroworld/robot-api";
 import { errorMessage } from "../../lib/api";
 import { labStore } from "../../game/academy/labStore";
 import { PanelHeader } from "../world/Hud";
 import { BlockEditor, type BlockEditorHandle } from "./editor/BlockEditor";
 import { runProgram } from "./sandbox/runProgram";
 import type { ExecuteResult } from "./sandbox/execute";
-import { saveDraft, submitAttempt, useAcademyBadges, useAcademyProgress, useLesson, useTracks } from "./hooks";
+import { joinSession, saveDraft, submitAttempt, useAcademyBadges, useAcademyProgress, useLesson, useTracks } from "./hooks";
+import { LeaderboardScreen } from "./social/Leaderboard";
+import { SessionInvites, SessionSetup } from "./social/SessionSetup";
+import { SessionScreen, currentSession, forgetSession } from "./social/SessionScreen";
 import styles from "./Academy.module.css";
 
-/** The Puzzle Lab console (SPEC-ADDENDUM-01 Milestone A1): pick a lesson, program the robot, run it. */
+type View =
+  | { kind: "home" }
+  | { kind: "lesson"; id: string }
+  | { kind: "leaderboard" }
+  | { kind: "setup"; mode: SessionKind }
+  | { kind: "session"; join: SessionJoinResponse };
+
+/**
+ * The Puzzle Lab console (SPEC-ADDENDUM-01 Milestones A1 and A3): pick a lesson, program the robot,
+ * run it; or code with a friend (pair programming, battles) and check the weekly leaderboard.
+ */
 export default function AcademyPanel({ onClose }: { onClose: () => void }) {
-  const [lessonId, setLessonId] = useState<string | null>(null);
-  return lessonId ? (
-    <LessonScreen key={lessonId} lessonId={lessonId} onBack={() => setLessonId(null)} onOpen={setLessonId} onClose={onClose} />
-  ) : (
-    <TrackHome onOpen={setLessonId} onClose={onClose} />
-  );
+  const [view, setView] = useState<View>({ kind: "home" });
+  const home = () => setView({ kind: "home" });
+  const openSession = (join: SessionJoinResponse) => setView({ kind: "session", join });
+  switch (view.kind) {
+    case "lesson":
+      return <LessonScreen key={view.id} lessonId={view.id} onBack={home} onOpen={(id) => setView({ kind: "lesson", id })} onClose={onClose} />;
+    case "leaderboard":
+      return <LeaderboardScreen onBack={home} onClose={onClose} />;
+    case "setup":
+      return <SessionSetup initialKind={view.mode} onStarted={openSession} onBack={home} onClose={onClose} />;
+    case "session":
+      return <SessionScreen key={view.join.session.id} join={view.join} onExit={home} onClose={onClose} />;
+    case "home":
+      return (
+        <TrackHome
+          onOpen={(id) => setView({ kind: "lesson", id })}
+          onLeaderboard={() => setView({ kind: "leaderboard" })}
+          onSetup={(mode) => setView({ kind: "setup", mode })}
+          onSession={openSession}
+          onClose={onClose}
+        />
+      );
+  }
 }
 
 // -------------------------------------------------------------------------------------------------
 // Track overview
 // -------------------------------------------------------------------------------------------------
 
-function TrackHome({ onOpen, onClose }: { onOpen: (id: string) => void; onClose: () => void }) {
+function TrackHome({
+  onOpen,
+  onLeaderboard,
+  onSetup,
+  onSession,
+  onClose,
+}: {
+  onOpen: (id: string) => void;
+  onLeaderboard: () => void;
+  onSetup: (mode: SessionKind) => void;
+  onSession: (join: SessionJoinResponse) => void;
+  onClose: () => void;
+}) {
   const tracks = useTracks();
+  const [rejoinError, setRejoinError] = useState<string | null>(null);
+  const active = currentSession();
+  const rejoin = async () => {
+    if (!active) return;
+    setRejoinError(null);
+    try {
+      onSession(await joinSession(active.id));
+    } catch (e) {
+      forgetSession();
+      setRejoinError(errorMessage(e));
+    }
+  };
   const progress = useAcademyProgress();
   const badges = useAcademyBadges();
   const stats = progress.data?.stats;
@@ -56,6 +110,29 @@ function TrackHome({ onOpen, onClose }: { onOpen: (id: string) => void; onClose:
           ))}
         </div>
       )}
+      <SessionInvites onJoined={onSession} />
+      {active && (
+        <div className={styles.invite}>
+          <span className={styles.grow}>
+            You're in a {active.kind === "pair" ? "pair session" : "coding battle"} on “{active.lesson.title}”.
+          </span>
+          <button className={styles.run} onClick={() => void rejoin()}>
+            Return
+          </button>
+        </div>
+      )}
+      {rejoinError && <p className={styles.error}>{rejoinError}</p>}
+      <div className={styles.socialActions}>
+        <button className={styles.secondary} onClick={() => onSetup("pair")}>
+          🤝 Pair up
+        </button>
+        <button className={styles.secondary} onClick={() => onSetup("battle")}>
+          ⚔️ Battle a friend
+        </button>
+        <button className={styles.secondary} onClick={onLeaderboard}>
+          🏆 Leaderboard
+        </button>
+      </div>
       {tracks.isPending && <p className={styles.muted}>Loading lessons…</p>}
       {tracks.error && <p className={styles.error}>{errorMessage(tracks.error)}</p>}
       {tracks.data?.length === 0 && <p className={styles.muted}>No lessons are open yet. Check back soon!</p>}

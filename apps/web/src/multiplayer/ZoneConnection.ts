@@ -1,10 +1,12 @@
 import { Callbacks, Client, type Room } from "@colyseus/sdk";
 import type { ZoneId } from "@entroworld/shared";
 import {
+  academyInviteSchema,
   callEventSchema,
   ClientMessage,
   ServerMessage,
   ZONE_ROOM,
+  type AcademyInvite,
   type CallEvent,
   type ChatBroadcast,
   type ChatChannel,
@@ -44,6 +46,7 @@ export interface ZoneEvents extends Record<string, unknown> {
   voiceToken: VoiceTokenPayload;
   voicePeers: VoicePeersPayload;
   callEvent: CallEvent;
+  academyInvite: AcademyInvite;
   propertyChanged: { plotId: string };
   eventUpdate: { eventId: string };
   /** Final leave (after reconnection attempts are exhausted or a consented leave). */
@@ -115,6 +118,10 @@ export class ZoneConnection extends Emitter<ZoneEvents> {
       const parsed = callEventSchema.safeParse(m);
       if (parsed.success) this.emit("callEvent", parsed.data);
     });
+    room.onMessage(ServerMessage.AcademyInvite, (m: unknown) => {
+      const parsed = academyInviteSchema.safeParse(m);
+      if (parsed.success) this.emit("academyInvite", parsed.data);
+    });
     room.onMessage(ServerMessage.PropertyChanged, (m: { plotId: string }) => this.emit("propertyChanged", m));
     room.onMessage(ServerMessage.EventUpdate, (m: { eventId: string }) => this.emit("eventUpdate", m));
     room.onMessage(ServerMessage.ShopEnter, (m: ShopPresencePayload) => this.emit("shopEnter", m));
@@ -171,6 +178,18 @@ export class ZoneConnection extends Emitter<ZoneEvents> {
 
   travel(kioskId: string, zoneId: ZoneId): void {
     this.send(ClientMessage.Travel, { kioskId, zoneId });
+  }
+
+  startClass(screenId: string, title: string): void {
+    this.send(ClientMessage.ClassStart, { screenId, title });
+  }
+
+  updateClass(code: string, status: string): void {
+    this.send(ClientMessage.ClassUpdate, { code, status });
+  }
+
+  endClass(): void {
+    this.send(ClientMessage.ClassEnd, {});
   }
 
   refreshAvatar(): void {

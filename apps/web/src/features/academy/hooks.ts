@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type {
   AcademyProgressView,
+  AcademySessionView,
+  CreateSessionRequest,
+  LeaderboardScope,
+  LeaderboardView,
+  SessionJoinResponse,
   BadgeView,
   LessonAttemptRequest,
   LessonAttemptResponse,
@@ -46,4 +51,36 @@ export async function saveDraft(lessonId: string, body: SaveCodeRequest): Promis
   await api.put<void>(`/academy/lessons/${encodeURIComponent(lessonId)}/code`, body);
   // Reopening the lesson later should start from this draft.
   queryClient.setQueryData<LessonView>(academyKeys.lesson(lessonId), (l) => (l ? { ...l, draft: { code: body.code, editorMode: body.editorMode } } : l));
+}
+
+// -------------------------------------------------------------------------------------------------
+// Social learning: leaderboards and sessions with friends
+// -------------------------------------------------------------------------------------------------
+
+export const socialKeys = {
+  leaderboard: (scope: LeaderboardScope) => ["academy", "leaderboard", scope] as const,
+  invites: ["academy", "invites"] as const,
+};
+
+export const useLeaderboard = (scope: LeaderboardScope) =>
+  useQuery({ queryKey: socialKeys.leaderboard(scope), queryFn: () => api.get<LeaderboardView>(`/academy/leaderboard?scope=${scope}`), staleTime: 30_000 });
+
+export const useSessionInvites = () =>
+  useQuery({
+    queryKey: socialKeys.invites,
+    queryFn: async () => (await api.get<{ invites: AcademySessionView[] }>("/academy/sessions/invites")).invites,
+    refetchInterval: 20_000,
+  });
+
+export const createSession = (body: CreateSessionRequest) => api.post<SessionJoinResponse>("/academy/sessions", body);
+
+export async function joinSession(sessionId: string): Promise<SessionJoinResponse> {
+  const result = await api.post<SessionJoinResponse>(`/academy/sessions/${encodeURIComponent(sessionId)}/join`);
+  void queryClient.invalidateQueries({ queryKey: socialKeys.invites });
+  return result;
+}
+
+export async function leaveSession(sessionId: string): Promise<void> {
+  await api.delete<void>(`/academy/sessions/${encodeURIComponent(sessionId)}`);
+  void queryClient.invalidateQueries({ queryKey: socialKeys.invites });
 }

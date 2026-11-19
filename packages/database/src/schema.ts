@@ -740,3 +740,25 @@ export const userLearningStats = pgTable(
   },
   (t) => [index("user_learning_stats_xp_idx").on(t.totalXp.desc()), check("user_learning_stats_xp_check", sql`${t.totalXp} >= 0`)],
 );
+
+/**
+ * Every XP grant, so XP can be summed over a time window (weekly leaderboards). The running
+ * total stays in `user_learning_stats`; both are written in the same transaction.
+ */
+export const academyXpEvents = pgTable(
+  "academy_xp_events",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    xp: integer("xp").notNull(),
+    lessonId: uuid("lesson_id").references(() => lessons.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("academy_xp_events_created_idx").on(t.createdAt, t.userId),
+    index("academy_xp_events_user_idx").on(t.userId, t.createdAt),
+    check("academy_xp_events_xp_check", sql`${t.xp} > 0`),
+  ],
+);

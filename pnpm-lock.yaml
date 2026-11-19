@@ -363,6 +363,12 @@ importers:
       '@entroworld/game-protocol':
         specifier: workspace:*
         version: link:../../packages/game-protocol
+      '@entroworld/puzzle-engine':
+        specifier: workspace:*
+        version: link:../../packages/puzzle-engine
+      '@entroworld/robot-api':
+        specifier: workspace:*
+        version: link:../../packages/robot-api
       '@entroworld/shared':
         specifier: workspace:*
         version: link:../../packages/shared

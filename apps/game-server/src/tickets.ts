@@ -7,6 +7,7 @@ import {
   gameTicketClaimsSchema,
   type GameTicketClaims,
 } from "@entroworld/game-protocol";
+import { ACADEMY_TICKET_AUDIENCE, academyTicketClaimsSchema, type AcademyTicketClaims } from "@entroworld/robot-api";
 
 export class TicketError extends Error {
   constructor(
@@ -49,19 +50,27 @@ export class TicketService {
 
   /** Verifies signature, audience, issuer and expiry, and validates the claim shape. */
   async verify(ticket: unknown): Promise<GameTicketClaims> {
+    const payload = await this.verifyJwt(ticket, GAME_TICKET_AUDIENCE);
+    const parsed = gameTicketClaimsSchema.safeParse(payload);
+    if (!parsed.success) throw new TicketError("ticket_invalid", "Malformed room ticket");
+    return parsed.data;
+  }
+
+  /** Verifies a ticket for an Academy session room (issued by the API only). */
+  async verifyAcademy(ticket: unknown): Promise<AcademyTicketClaims> {
+    const payload = await this.verifyJwt(ticket, ACADEMY_TICKET_AUDIENCE, [GAME_TICKET_ISSUER]);
+    const parsed = academyTicketClaimsSchema.safeParse(payload);
+    if (!parsed.success) throw new TicketError("ticket_invalid", "Malformed session ticket");
+    return parsed.data;
+  }
+
+  private async verifyJwt(ticket: unknown, audience: string, issuers: string[] = [GAME_TICKET_ISSUER, GAME_SERVER_ISSUER]): Promise<Record<string, unknown>> {
     if (typeof ticket !== "string" || ticket.length === 0 || ticket.length > 4096) {
       throw new TicketError("ticket_missing", "A room ticket is required");
     }
     try {
-      const { payload } = await jwtVerify(ticket, this.key, {
-        algorithms: ["HS256"],
-        audience: GAME_TICKET_AUDIENCE,
-        issuer: [GAME_TICKET_ISSUER, GAME_SERVER_ISSUER],
-        clockTolerance: 5,
-      });
-      const parsed = gameTicketClaimsSchema.safeParse(payload);
-      if (!parsed.success) throw new TicketError("ticket_invalid", "Malformed room ticket");
-      return parsed.data;
+      const { payload } = await jwtVerify(ticket, this.key, { algorithms: ["HS256"], audience, issuer: issuers, clockTolerance: 5 });
+      return payload;
     } catch (e) {
       if (e instanceof TicketError) throw e;
       if (e instanceof joseErrors.JWTExpired) throw new TicketError("ticket_expired", "Room ticket expired");

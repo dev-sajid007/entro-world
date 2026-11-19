@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { SignJWT, errors as joseErrors, jwtVerify } from "jose";
 import { GAME_TICKET_AUDIENCE, GAME_TICKET_ISSUER, GAME_TICKET_TTL_SECONDS, type GameTicketClaims } from "@entroworld/game-protocol";
+import { ACADEMY_TICKET_AUDIENCE, type AcademyTicketClaims } from "@entroworld/robot-api";
 import type { UserRole } from "@entroworld/shared";
 
 export const ACCESS_TOKEN_ISSUER = "entroworld:api";
@@ -68,6 +69,15 @@ export class GameTickets {
   }
 
   async sign(claims: Omit<GameTicketClaims, "jti">): Promise<{ ticket: string; expiresAt: Date }> {
+    return this.signFor(GAME_TICKET_AUDIENCE, claims);
+  }
+
+  /** A ticket for an Academy session room (pair programming, coding battle). */
+  async signAcademy(claims: Omit<AcademyTicketClaims, "jti">): Promise<{ ticket: string; expiresAt: Date }> {
+    return this.signFor(ACADEMY_TICKET_AUDIENCE, claims);
+  }
+
+  private async signFor(audience: string, claims: { sub: string } & Record<string, unknown>): Promise<{ ticket: string; expiresAt: Date }> {
     const expiresAt = new Date(Date.now() + GAME_TICKET_TTL_SECONDS * 1000);
     const { sub, ...rest } = claims;
     const ticket = await new SignJWT({ ...rest })
@@ -75,7 +85,7 @@ export class GameTickets {
       .setSubject(sub)
       .setJti(randomUUID())
       .setIssuer(GAME_TICKET_ISSUER)
-      .setAudience(GAME_TICKET_AUDIENCE)
+      .setAudience(audience)
       .setIssuedAt()
       .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
       .sign(this.key);

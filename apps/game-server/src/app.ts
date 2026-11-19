@@ -5,9 +5,11 @@ import { WebSocketTransport } from "@colyseus/ws-transport";
 import { livekitConfigured, type GameEnv } from "@entroworld/config";
 import { PhysicsWorld } from "@entroworld/game-engine";
 import { ZONE_ROOM } from "@entroworld/game-protocol";
+import { ACADEMY_ROOM } from "@entroworld/robot-api";
 import { createRoutes } from "./http/routes";
 import { createLogger, type Logger } from "./logger";
 import { GameMetrics } from "./metrics";
+import { AcademyRoom } from "./rooms/AcademyRoom";
 import { ZoneRoom } from "./rooms/ZoneRoom";
 import { setServices, type GameServices } from "./services";
 import { databaseStore, memoryStore, type WorldStore } from "./store";
@@ -71,6 +73,8 @@ export async function createGameServer(env: GameEnv, options: CreateGameServerOp
         .filterBy(["zoneId"])
         // Fill the busiest instance first: a social space is better with people in it.
         .sortBy({ clients: -1 }),
+      // Pair programming and coding battles: one room per session, found by its id.
+      [ACADEMY_ROOM]: defineRoom(AcademyRoom).filterBy(["sessionId"]),
     },
     routes: createRoutes({ devTickets: env.GAME_DEV_TICKETS }),
     transport: new WebSocketTransport({ pingInterval: 5000, pingMaxRetries: 3 }),

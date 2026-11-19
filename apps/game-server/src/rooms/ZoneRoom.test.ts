@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { SignJWT } from "jose";
 import { boot, type ColyseusTestServer } from "@colyseus/testing";
 import { matchMaker } from "@colyseus/core";
 import type { Room as ClientRoom } from "@colyseus/sdk";
@@ -15,6 +17,7 @@ import {
   USER_CONTROL_CHANNEL,
   ZONE_ROOM,
   onlineKey,
+  parseClassScreen,
   type ChatBroadcast,
   type ErrorPayload,
   type PlayerStateShape,
@@ -22,6 +25,18 @@ import {
   type ZoneTransferPayload,
 } from "@entroworld/game-protocol";
 import type { WorldJoinResponse, ZoneId } from "@entroworld/shared";
+import {
+  ACADEMY_ROOM,
+  ACADEMY_TICKET_AUDIENCE,
+  BATTLE_COUNTDOWN_MS,
+  SessionClientMessage,
+  SessionServerMessage,
+  type BattleVerdictPayload,
+  type PuzzleDefinition,
+  type SessionProgramPayload,
+  type SessionRunPayload,
+  type SessionStateView,
+} from "@entroworld/robot-api";
 import { getCityLayout, getZoneLayout, interactivesInZone } from "@entroworld/world-assets";
 import { createGameServer } from "../app";
 import { devUserId } from "../http/routes";
@@ -544,5 +559,193 @@ describe("AI shopkeepers", () => {
   it("has no shopkeepers in other zones", async () => {
     const { room } = await join("zone-central");
     expect(state(room).npcs.size).toBe(0);
+  });
+});
+
+describe("live classes", () => {
+  const screen = () => getCityLayout().interactives.find((o) => o.id === "screen:amphitheater")!;
+  const atStage = () => ({ x: screen().x, y: 0, z: screen().z + 14, rotation: 0 });
+
+  it("lets one presenter at a time show code on the Event Center screen", async () => {
+    const teacher = await join("zone-event", atStage(), "teacher");
+    const student = await join("zone-event", atStage(), "student");
+    const content = () => parseClassScreen(state(student.room).objects.get("screen:amphitheater")?.value ?? "");
+
+    teacher.room.send(ClientMessage.ClassStart, { screenId: "screen:amphitheater", title: "Loops 101" });
+    await until(() => content() !== null);
+    expect(content()).toMatchObject({ presenterId: teacher.user.sub, title: "Loops 101", code: "" });
+
+    const studentBox = inbox(student.room);
+    student.room.send(ClientMessage.ClassStart, { screenId: "screen:amphitheater", title: "Mine now" });
+    await until(() => studentBox.of<ErrorPayload>(ServerMessage.Error).length > 0);
+    expect(studentBox.of<ErrorPayload>(ServerMessage.Error)[0]!.code).toBe("screen_busy");
+    student.room.send(ClientMessage.ClassUpdate, { code: "x", status: "" });
+    await until(() => studentBox.of<ErrorPayload>(ServerMessage.Error).length > 1);
+    expect(studentBox.of<ErrorPayload>(ServerMessage.Error)[1]!.code).toBe("not_presenting");
+
+    teacher.room.send(ClientMessage.ClassUpdate, { code: "repeat (3) {\r\n\tmoveForward(1);\u202e\n}", status: "Robot reached the exit" });
+    await until(() => content()?.code !== "");
+    expect(content()).toMatchObject({ code: "repeat (3) {\n  moveForward(1);\n}", status: "Robot reached the exit" });
+
+    teacher.room.send(ClientMessage.ClassEnd, {});
+    await until(() => content() === null);
+  });
+
+  it("frees the screen when the presenter leaves", async () => {
+    const teacher = await join("zone-event", atStage(), "teacher");
+    const student = await join("zone-event", atStage(), "student");
+    teacher.room.send(ClientMessage.ClassStart, { screenId: "screen:amphitheater", title: "Bye soon" });
+    await until(() => state(student.room).objects.get("screen:amphitheater")?.occupant !== "");
+    await teacher.room.leave();
+    await until(() => state(student.room).objects.get("screen:amphitheater")?.occupant === "");
+  });
+
+  it("refuses presenters out of reach", async () => {
+    const far = await join("zone-central");
+    const box = inbox(far.room);
+    far.room.send(ClientMessage.ClassStart, { screenId: "screen:amphitheater", title: "From afar" });
+    await until(() => box.of<ErrorPayload>(ServerMessage.Error).length > 0);
+    expect(box.of<ErrorPayload>(ServerMessage.Error)[0]!.code).toBe("unknown_object");
+  });
+});
+
+describe("academy sessions", () => {
+  const lessonId = "5b1d3f5a-7c9e-4b2d-8f4a-6c8e0a2b4d6f";
+  const puzzle: PuzzleDefinition = {
+    width: 4,
+    height: 1,
+    tiles: ["...."],
+    start: { x: 0, y: 0, dir: "E" },
+    goal: { reach: { x: 3, y: 0 }, collectAll: false },
+    allowedApi: ["moveForward", "turnLeft", "turnRight"],
+    controls: [],
+    maxActions: 10,
+    maxBlocks: null,
+    par: null,
+  };
+  const solve = [{ type: "moveForward", steps: 3 }];
+
+  beforeAll(() => {
+    store.lessons.set(lessonId, { lessonId, title: "Straight ahead", puzzle });
+  });
+
+  async function academyTicket(claims: { sub: string; username: string; displayName: string; sessionId: string; kind: "pair" | "battle"; members: string[]; lessonId?: string }, secret = SECRET) {
+    const { sub, ...rest } = { lessonId, ...claims };
+    return new SignJWT({ ...rest })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject(sub)
+      .setJti(randomUUID())
+      .setIssuer(GAME_TICKET_ISSUER)
+      .setAudience(ACADEMY_TICKET_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime("1m")
+      .sign(new TextEncoder().encode(secret));
+  }
+
+  async function pairUp(kind: "pair" | "battle") {
+    const sessionId = randomUUID();
+    const host = nextUser("host");
+    const guest = nextUser("guest");
+    const members = [host.sub, guest.sub];
+    const connect = async (user: typeof host) => {
+      const room = await colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: await academyTicket({ ...user, sessionId, kind, members }) });
+      open.push(room);
+      const box = inbox(room);
+      room.send(SessionClientMessage.Sync, {});
+      return { room, box, user };
+    };
+    const a = await connect(host);
+    const b = await connect(guest);
+    const latest = (box: ReturnType<typeof inbox>) => box.of<SessionStateView>(SessionServerMessage.State).at(-1);
+    await until(() => latest(a.box)?.members.every((m) => m.connected) === true && latest(b.box)?.members.every((m) => m.connected) === true);
+    return { sessionId, host: a, guest: b, members, latest };
+  }
+
+  it("only admits members with a valid ticket for this session", async () => {
+    const sessionId = randomUUID();
+    const user = nextUser();
+    const outsider = nextUser();
+    const members = [user.sub, nextUser().sub];
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId })).rejects.toThrow();
+    const forged = await academyTicket({ ...user, sessionId, kind: "pair", members }, "a-different-secret-that-is-long-enough!!");
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: forged })).rejects.toThrow();
+    const notMember = await academyTicket({ ...outsider, sessionId, kind: "pair", members });
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: notMember })).rejects.toThrow();
+    const otherSession = await academyTicket({ ...user, sessionId: randomUUID(), kind: "pair", members });
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: otherSession })).rejects.toThrow();
+    // A zone ticket is not a session ticket.
+    const zone = await apiTicket("zone-central");
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: zone.ticket })).rejects.toThrow();
+    const unknownLesson = await academyTicket({ ...user, sessionId, kind: "pair", members, lessonId: randomUUID() });
+    await expect(colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: unknownLesson })).rejects.toThrow();
+  });
+
+  it("pair programming: the driver's edits and runs reach the partner, and the keyboard can be passed", async () => {
+    const { host, guest, latest } = await pairUp("pair");
+    expect(latest(guest.box)).toMatchObject({ kind: "pair", driverId: host.user.sub, lesson: { id: lessonId, title: "Straight ahead" } });
+
+    host.room.send(SessionClientMessage.Edit, { program: "{\"blocks\":1}" });
+    await until(() => guest.box.of(SessionServerMessage.Program).length === 1);
+    expect(guest.box.of<SessionProgramPayload>(SessionServerMessage.Program)[0]).toEqual({ program: "{\"blocks\":1}", version: 1, by: host.user.sub });
+
+    guest.room.send(SessionClientMessage.Edit, { program: "mine" });
+    await until(() => guest.box.of(SessionServerMessage.Error).length === 1);
+
+    host.room.send(SessionClientMessage.Run, { actions: solve });
+    await until(() => guest.box.of(SessionServerMessage.Run).length === 1);
+    expect(guest.box.of<SessionRunPayload>(SessionServerMessage.Run)[0]).toEqual({ by: host.user.sub, actions: solve });
+
+    host.room.send(SessionClientMessage.Swap, {});
+    await until(() => latest(host.box)?.driverId === guest.user.sub);
+    guest.room.send(SessionClientMessage.Edit, { program: "now mine" });
+    await until(() => host.box.of(SessionServerMessage.Program).length === 1);
+  });
+
+  it("pair programming: a rejoining member gets the current program", async () => {
+    const { sessionId, host, guest, members } = await pairUp("pair");
+    host.room.send(SessionClientMessage.Edit, { program: "draft" });
+    await until(() => guest.box.of(SessionServerMessage.Program).length === 1);
+    await guest.room.leave();
+    const again = await colyseus.sdk.joinOrCreate(ACADEMY_ROOM, { sessionId, ticket: await academyTicket({ ...guest.user, sessionId, kind: "pair", members }) });
+    open.push(again);
+    const box = inbox(again);
+    again.send(SessionClientMessage.Sync, {});
+    await until(() => box.of(SessionServerMessage.Program).length >= 1);
+    expect(box.of<SessionProgramPayload>(SessionServerMessage.Program)[0]!.program).toBe("draft");
+  });
+
+  it("coding battle: counts down, replays submissions and names the winner", async () => {
+    const { host, guest, latest } = await pairUp("battle");
+    host.room.send(SessionClientMessage.Submit, { actions: solve });
+    await until(() => host.box.of(SessionServerMessage.Error).length === 1);
+
+    host.room.send(SessionClientMessage.Ready, {});
+    guest.room.send(SessionClientMessage.Ready, {});
+    await until(() => latest(host.box)?.battle?.phase === "countdown");
+    await until(() => latest(host.box)?.battle?.phase === "racing", BATTLE_COUNTDOWN_MS + 2000);
+
+    guest.room.send(SessionClientMessage.Submit, { actions: [{ type: "turnLeft" }] });
+    await until(() => guest.box.of(SessionServerMessage.Verdict).length === 1);
+    expect(guest.box.of<BattleVerdictPayload>(SessionServerMessage.Verdict)[0]).toMatchObject({ success: false, won: false });
+
+    host.room.send(SessionClientMessage.Submit, { actions: solve });
+    await until(() => host.box.of(SessionServerMessage.Verdict).length === 1);
+    expect(host.box.of<BattleVerdictPayload>(SessionServerMessage.Verdict)[0]).toMatchObject({ success: true, won: true, actionCount: 1 });
+    await until(() => latest(guest.box)?.battle?.phase === "finished");
+    expect(latest(guest.box)!.battle!.winnerId).toBe(host.user.sub);
+
+    guest.room.send(SessionClientMessage.Rematch, {});
+    await until(() => latest(host.box)?.battle?.phase === "waiting");
+  }, 10_000);
+});
+
+describe("academy invitations", () => {
+  it("delivers an invitation from the API to the friend's game session", async () => {
+    const { room, user } = await join("zone-central");
+    const box = inbox(room);
+    const invite = { sessionId: randomUUID(), kind: "battle", lessonTitle: "Hello robot", from: { id: randomUUID(), displayName: "Ada" } };
+    await matchMaker.presence.publish(USER_CONTROL_CHANNEL, { type: "academy_invite", userId: user.sub, invite });
+    await until(() => box.of(ServerMessage.AcademyInvite).length === 1);
+    expect(box.of(ServerMessage.AcademyInvite)[0]).toEqual(invite);
   });
 });

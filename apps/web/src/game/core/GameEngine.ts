@@ -4,6 +4,7 @@ import { EMOTES, type EmoteId } from "@entroworld/avatar";
 import { PhysicsWorld, SIM } from "@entroworld/game-engine";
 import { CloseReason, isFinalCloseCode } from "@entroworld/game-protocol";
 import type {
+  AcademyInvite,
   CallEvent,
   ChatBroadcast,
   ChatChannel,
@@ -76,6 +77,9 @@ export interface EngineEvents extends Record<string, unknown> {
   voiceToken: VoiceTokenPayload;
   voicePeers: VoicePeer[];
   callEvent: CallEvent;
+  academyInvite: AcademyInvite;
+  /** An error the game server reported for something the player did. */
+  serverError: { code: string; message: string };
   propertyChanged: { plotId: string };
   eventUpdate: { eventId: string };
   system: string;
@@ -287,11 +291,15 @@ export class GameEngine {
       for (const m of list) this.addChat(m, false);
     });
     connection.on("system", (m) => this.events.emit("system", m.text));
-    connection.on("error", (e) => this.ui.set({ error: e.message }));
+    connection.on("error", (e) => {
+      this.ui.set({ error: e.message });
+      this.events.emit("serverError", e);
+    });
     connection.on("transfer", (t) => void this.handleTransfer(t));
     connection.on("voiceToken", (t) => this.events.emit("voiceToken", t));
     connection.on("voicePeers", (p) => this.events.emit("voicePeers", p.peers));
     connection.on("callEvent", (e) => this.events.emit("callEvent", e));
+    connection.on("academyInvite", (e) => this.events.emit("academyInvite", e));
     connection.on("propertyChanged", (p) => this.events.emit("propertyChanged", p));
     connection.on("eventUpdate", (p) => this.events.emit("eventUpdate", p));
     connection.on("latency", (ms) => this.ui.set({ latency: Math.round(ms) }));
@@ -544,6 +552,21 @@ export class GameEngine {
     this.camera?.snapBehind(spawn.rotation);
     this.zoneId = zoneId;
     this.ui.set({ zoneId });
+  }
+
+  /** Live classes: present on an Event Center screen. Online only. */
+  startClass(screenId: string, title: string): boolean {
+    if (!this.connection) return false;
+    this.connection.startClass(screenId, title);
+    return true;
+  }
+
+  updateClass(code: string, status: string): void {
+    this.connection?.updateClass(code, status);
+  }
+
+  endClass(): void {
+    this.connection?.endClass();
   }
 
   refreshAvatar(avatar: AvatarConfig): void {

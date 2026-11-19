@@ -9,6 +9,7 @@ import { Composer, PostList } from "../social/Posts";
 import socialStyles from "../social/Social.module.css";
 import { shopQuery } from "../market/hooks";
 import { ShopPanel } from "../market/ShopPanel";
+import { socialKeys } from "../academy/hooks";
 import { VoiceControls } from "../voice/VoiceControls";
 import type { GameEngine } from "../../game/core/GameEngine";
 import { PanelHeader, type PanelRequest } from "./Hud";
@@ -17,6 +18,7 @@ import { WorldLayer, WorldLoading } from "./WorldLayer";
 
 // Blockly is large; it loads the first time someone opens the Puzzle Lab console.
 const AcademyPanel = lazy(() => import("../academy/AcademyPanel"));
+const ClassPanel = lazy(() => import("../academy/ClassPanel"));
 
 const requestTicket = (zoneId?: ZoneId) => api.post<WorldJoinResponse>("/worlds/join", zoneId ? { zoneId } : {});
 
@@ -64,6 +66,7 @@ export default function WorldPage() {
 function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () => void }) {
   const ui = useSyncExternalStore(engine.ui.subscribe, engine.ui.get);
   useShopGreetings(engine);
+  useAcademyInvites(engine);
   const renderPanel = useCallback((panel: PanelRequest, close: () => void) => {
     if (panel.kind === "board") return <BoardPanel panel={panel} onClose={close} />;
     if (panel.kind === "shopkeeper" && panel.object.ref) return <ShopPanel shopSlug={panel.object.ref} onClose={close} />;
@@ -74,16 +77,37 @@ function OnlineWorld({ engine, onRejoin }: { engine: GameEngine; onRejoin: () =>
         </Suspense>
       );
     }
+    if (panel.kind === "screen") {
+      return (
+        <Suspense fallback={<PanelHeader title={panel.object.label} subtitle="Loading…" onClose={close} />}>
+          <ClassPanel engine={engine} screen={panel.object} onClose={close} />
+        </Suspense>
+      );
+    }
     return (
       <div>
         <PanelHeader title={panel.object.label} onClose={close} />
         <p className={socialStyles.muted}>Coming soon to the city.</p>
       </div>
     );
-  }, []);
+  }, [engine]);
 
   if (ui.status === "disconnected" && ui.error) return <WorldLoading text="" error={ui.error} onRetry={onRejoin} />;
   return <WorldLayer engine={engine} hudVisible renderPanel={renderPanel} topRight={<HudNav />} extras={<VoiceControls />} />;
+}
+
+/** A friend's invitation to pair up or battle shows as a toast; the Puzzle Lab console lists it. */
+function useAcademyInvites(engine: GameEngine) {
+  const queryClient = useQueryClient();
+  useEffect(
+    () =>
+      engine.events.on("academyInvite", (invite) => {
+        void queryClient.invalidateQueries({ queryKey: socialKeys.invites });
+        const what = invite.kind === "pair" ? "pair up" : "a coding battle";
+        engine.events.emit("system", `${invite.from.displayName} invited you to ${what} on “${invite.lessonTitle}”. Open a Puzzle Lab console at the Coding Academy to join.`);
+      }),
+    [engine, queryClient],
+  );
 }
 
 /** The shopkeeper greets the player (in a speech bubble only they see) when they step up to the counter. */
