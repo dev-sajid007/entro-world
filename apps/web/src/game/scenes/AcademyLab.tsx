@@ -6,6 +6,7 @@ import type { SimEvent } from "@entroworld/puzzle-engine";
 import type { Direction, PuzzleDefinition } from "@entroworld/robot-api";
 import type { GameEngine } from "../core/GameEngine";
 import { labStore, type LabRun } from "../academy/labStore";
+import { sfx } from "../audio/Sfx";
 import { labelTexture } from "../assets/textures";
 import { plainMaterial } from "../assets/materials";
 
@@ -89,32 +90,39 @@ function canvasTexture(key: string, w: number, h: number, draw: (ctx: CanvasRend
   });
 }
 
-/** Polished dark epoxy floor with a faint 1.5 m grid (one texture repeat = 3 m). */
+/**
+ * Ground surfaces outside are drawn with a strong polygon offset (pulled toward the camera, see
+ * Surfaces), which beats the lab floor's few centimetres of height at shallow camera angles: the
+ * grass would show through the floor. Everything lying flat in the lab is pulled further.
+ */
+function overGround<T extends THREE.Material>(m: T, extra = 0): T {
+  m.polygonOffset = true;
+  m.polygonOffsetFactor = -10 - extra;
+  m.polygonOffsetUnits = -20 - extra * 2;
+  return m;
+}
+
+/** Polished dark floor laid in 1.5 m tiles (one texture repeat = 3 m, four tiles). */
 function floorMaterial(): THREE.MeshStandardMaterial {
   return once("mat:floor", () => {
     const map = canvasTexture("floor", 512, 512, (ctx) => {
-      ctx.fillStyle = "#0d131d";
-      ctx.fillRect(0, 0, 512, 512);
-      // Subtle speckle so the floor isn't flat plastic.
-      for (let i = 0; i < 2400; i++) {
-        const v = 14 + Math.floor(Math.random() * 14);
-        ctx.fillStyle = `rgb(${v},${v + 4},${v + 12})`;
-        ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+      // Two slightly different tile tones in a checker, with thin dark joints.
+      const tones = ["#141b27", "#111824"];
+      for (let i = 0; i < 2; i++) {
+        for (let j = 0; j < 2; j++) {
+          ctx.fillStyle = tones[(i + j) % 2]!;
+          ctx.fillRect(i * 256, j * 256, 256, 256);
+        }
       }
-      ctx.strokeStyle = "#1e2b3e";
-      ctx.lineWidth = 3;
-      for (const o of [1.5, 256]) {
-        ctx.beginPath();
-        ctx.moveTo(o, 0);
-        ctx.lineTo(o, 512);
-        ctx.moveTo(0, o);
-        ctx.lineTo(512, o);
-        ctx.stroke();
+      ctx.fillStyle = "#0a0f17";
+      for (const o of [0, 256]) {
+        ctx.fillRect(o, 0, 3, 512);
+        ctx.fillRect(0, o, 512, 3);
       }
     }).clone();
     map.needsUpdate = true;
     map.repeat.set((L.width - L.wall * 2) / 3, (L.depth - L.wall * 2) / 3);
-    return new THREE.MeshStandardMaterial({ map, roughness: 0.22, metalness: 0.35 });
+    return overGround(new THREE.MeshStandardMaterial({ map, roughness: 0.3, metalness: 0.2 }));
   });
 }
 
@@ -187,7 +195,7 @@ function Room({ detail }: { detail: "high" | "low" }) {
       </mesh>
       {/* A lit walkway inlaid in the floor, from the doorway to the console. */}
       {[-0.9, 0.9].map((x) => (
-        <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.045, (front + L.consoleZ) / 2]} material={glow("#38bdf8", 1.6)}>
+        <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.045, (front + L.consoleZ) / 2]} material={once("mat:walkway", () => overGround(glow("#38bdf8", 1.6).clone(), 2))}>
           <planeGeometry args={[0.05, L.consoleZ - front]} />
         </mesh>
       ))}
@@ -354,7 +362,7 @@ function Board() {
   return (
     <group>
       {/* The projector platform, always there: a dark slab with a lit rim and corner emitters. */}
-      <mesh position={[0, 0.03, L.boardZ]} material={plainMaterial("#0a111c", 0.3, 0.7)} receiveShadow>
+      <mesh position={[0, 0.03, L.boardZ]} material={once("mat:pad", () => overGround(new THREE.MeshStandardMaterial({ color: "#0a111c", roughness: 0.3, metalness: 0.7 }), 2))} receiveShadow>
         <boxGeometry args={[pad, 0.06, pad]} />
       </mesh>
       {[-1, 1].map((s) => (
@@ -404,7 +412,7 @@ function tileMaterial(alt: boolean): THREE.MeshStandardMaterial {
       ctx.fillStyle = "#7dd3fc";
       for (const [x, y] of [[10, 10], [110, 10], [10, 110], [110, 110]] as const) ctx.fillRect(x, y, 8, 8);
     }, false);
-    return new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: "#ffffff", emissiveIntensity: 0.55, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.94 });
+    return overGround(new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: "#ffffff", emissiveIntensity: 0.55, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.94 }), 4);
   });
 }
 
@@ -498,6 +506,7 @@ function ExitDoor({ ref, position: [x, z] }: { ref: Ref<THREE.Group>; position: 
 }
 
 // Robot animation timing (seconds).
+const tmpPos = new THREE.Vector3();
 const DURATION: Record<SimEvent["type"], number> = { move: 0.32, jump: 0.55, turn: 0.26, pickUp: 0.4, drop: 0.4, say: 0.9, blocked: 0.55 };
 const FINALE = 1.4;
 
@@ -531,7 +540,7 @@ function Robot({
   useEffect(() => () => bodyMat.dispose(), [bodyMat]);
 
   const start: Pose = useMemo(() => ({ x: puzzle.start.x, y: puzzle.start.y, heading: HEADING[puzzle.start.dir] }), [puzzle]);
-  const anim = useRef({ runId: 0, index: 0, t: 0, from: { ...start }, pose: { ...start }, finale: 0, done: true });
+  const anim = useRef({ runId: 0, index: 0, t: 0, from: { ...start }, pose: { ...start }, finale: 0, done: true, sounded: -1 });
 
   useFrame((_, rawDt) => {
     const g = root.current;
@@ -549,6 +558,7 @@ function Robot({
       a.pose = { ...start };
       a.finale = 0;
       a.done = false;
+      a.sounded = -1;
       const initial = initialBatteries(puzzle);
       for (const [k, m] of batteries.current) m.visible = initial.has(k);
     }
@@ -559,6 +569,11 @@ function Robot({
     if (run && !a.done) {
       a.t += dt;
       const e = run.events[a.index];
+      if (e && a.t >= 0 && a.sounded !== a.index) {
+        a.sounded = a.index;
+        const s = sfx.spatial(g.getWorldPosition(tmpPos).x, tmpPos.z, 30);
+        sfx.robot(e.type, s.pan, s.gain);
+      }
       if (e) {
         const p = Math.max(0, Math.min(1, a.t / DURATION[e.type]));
         const s = p * p * (3 - 2 * p);
@@ -597,6 +612,10 @@ function Robot({
         }
       } else {
         // The finale: a happy spin and an opening door, or a sad shake.
+        if (a.finale === 0) {
+          if (run.outcome === "success") sfx.success();
+          else sfx.failure();
+        }
         a.finale += dt;
         const p = Math.min(1, a.finale / FINALE);
         if (run.outcome === "success") {

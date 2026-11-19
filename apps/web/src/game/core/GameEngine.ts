@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { sfx } from "../audio/Sfx";
 import { DEFAULT_ZONE, NETWORK, type AvatarConfig, type WorldJoinResponse, type ZoneId } from "@entroworld/shared";
 import { EMOTES, type EmoteId } from "@entroworld/avatar";
 import { PhysicsWorld, SIM } from "@entroworld/game-engine";
@@ -129,6 +130,11 @@ export class GameEngine {
   /** World position the camera focuses on (read by lights and other scene components). */
   readonly focus = new THREE.Vector3();
   readonly remotes = new Map<string, RemotePlayer>();
+  /**
+   * Adjusts the player's input before each step (e.g. to walk around cars). The adjusted input is
+   * also what's sent to the server, so prediction and the server stay in agreement.
+   */
+  movementFilter: ((x: number, z: number, buttons: number, yaw: number) => { buttons: number; yaw: number }) | null = null;
   /** AI shopkeepers in the current zone, by NPC id. */
   readonly npcs = new Map<string, Shopkeeper>();
   readonly local: LocalPlayer;
@@ -494,6 +500,7 @@ export class GameEngine {
   emote(id: EmoteId): void {
     if (this.local.seated) return;
     this.local.playEmote(id, performance.now());
+    sfx.emote(id);
     this.connection?.emote(id);
   }
 
@@ -605,7 +612,13 @@ export class GameEngine {
     this.input.movementIntent = false;
 
     const alpha = this.stepper.advance(frameDt, () => {
-      const frame = this.local.step(this.input.buttons(), yaw);
+      let buttons = this.input.buttons();
+      let stepYaw = yaw;
+      if (this.movementFilter) {
+        const st = this.local.character.state;
+        ({ buttons, yaw: stepYaw } = this.movementFilter(st.x, st.z, buttons, yaw));
+      }
+      const frame = this.local.step(buttons, stepYaw);
       if (frame && this.connection) {
         this.outbox.push(frame);
         this.stepsSinceSend++;

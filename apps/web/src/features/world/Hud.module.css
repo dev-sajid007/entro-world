@@ -595,3 +595,30 @@ kbd {
     max-height: 62dvh;
   }
 }
+
+.sound {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+.soundButton {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 999px;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.soundSlider {
+  width: 84px;
+  accent-color: #38bdf8;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.sound:hover .soundSlider,
+.soundSlider:focus-visible {
+  opacity: 1;
+}

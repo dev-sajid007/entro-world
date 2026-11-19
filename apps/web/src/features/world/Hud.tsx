@@ -4,6 +4,7 @@ import { EMOTES } from "@entroworld/avatar";
 import { Buttons, type ChatChannel } from "@entroworld/game-protocol";
 import type { InteractiveKind, InteractiveObject } from "@entroworld/world-assets";
 import type { GameEngine } from "../../game/core/GameEngine";
+import { SoundControl } from "./SoundControl";
 import styles from "./Hud.module.css";
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
@@ -101,6 +102,7 @@ export function Hud({ engine, renderPanel, extras, topRight }: HudProps) {
         <div className={styles.stats}>
           {ui.fps} FPS{ui.latency !== null ? ` · ${ui.latency} ms` : ""} · {ui.x}, {ui.z}
         </div>
+        <SoundControl />
         {ui.status === "disconnected" && (
           <button className={styles.retry} onClick={() => engine.retryConnection()}>
             Reconnect
@@ -365,6 +367,7 @@ function HelpOverlay({ touch, onClose }: { touch: boolean; onClose: () => void }
           <span><kbd>Enter</kbd></span><span>Chat</span>
           <span><kbd>1–8</kbd></span><span>Emotes</span>
           <span><kbd>V</kbd></span><span>Toggle proximity voice</span>
+          <span><kbd>M</kbd></span><span>Mute or unmute game sounds</span>
           <span><kbd>H</kbd></span><span>Show this help</span>
         </div>
         )}

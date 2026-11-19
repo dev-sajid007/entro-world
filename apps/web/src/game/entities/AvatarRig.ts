@@ -68,6 +68,11 @@ export class AvatarRig {
     this.classic.root.visible = !showHuman;
   }
 
+  /** Footfalls counted from the realistic avatar's feet, or null when it isn't shown. */
+  footfalls(): number | null {
+    return this.human && this.lod === 0 && this.human.root.visible ? this.human.footfalls : null;
+  }
+
   update(dt: number, state: AnimationState, speed: number, emote: string): void {
     if (this.human && this.lod === 0) this.human.update(dt, state, speed, emote);
     else this.classic.update(dt, state, speed, emote);

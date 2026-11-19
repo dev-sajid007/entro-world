@@ -8,6 +8,8 @@ import { Atmosphere, Island, RoadMarkings, Surfaces } from "../../game/scenes/En
 import { ChunkLayer } from "../../game/scenes/ChunkLayer";
 import { Interactives, type ScreenContent } from "../../game/scenes/Interactives";
 import { AcademyLab } from "../../game/scenes/AcademyLab";
+import { Traffic } from "../../game/scenes/Traffic";
+import { GameSounds } from "../../game/audio/GameSounds";
 import { Plots } from "../../game/scenes/Plots";
 import { PostEffects, chosenQuality, initialQuality, type GraphicsQuality } from "../../game/scenes/PostEffects";
 
@@ -76,6 +78,8 @@ export function WorldCanvas({ engine, properties, screen }: WorldCanvasProps) {
       <Island />
       <Surfaces />
       <RoadMarkings />
+      <Traffic engine={engine} shadows={gfx.shadows} />
+      <GameSounds engine={engine} />
       <ChunkLayer engine={engine} />
       <Interactives engine={engine} screen={screen} />
       <AcademyLab engine={engine} />

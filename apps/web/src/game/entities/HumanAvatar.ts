@@ -59,6 +59,8 @@ interface Landmarks {
   headScale: number;
 }
 
+const tmpFoot = new THREE.Vector3();
+
 export class HumanAvatar {
   readonly root = new THREE.Group();
   /** Turned to face the game's forward (-Z); offsets for sitting are applied here. */
@@ -84,6 +86,9 @@ export class HumanAvatar {
   private lastEmote = "";
   private sitBlend = 0;
   private time = Math.random() * 10;
+  /** Counts the feet touching the ground while walking or running (footstep sounds follow it). */
+  footfalls = 0;
+  private readonly feet = ["foot_l", "foot_r"].map((name) => ({ name, low: Infinity, down: true }));
   private configKey = "";
 
   constructor(
@@ -395,6 +400,30 @@ export class HumanAvatar {
   // Animation
   // -----------------------------------------------------------------------------------------------
 
+  /**
+   * Finds the moments a foot touches down in the clip: its height (above the model's origin)
+   * reaching the bottom of its swing. `low` follows the lowest height seen, so it works for any
+   * body and clip; the gap between "down" and "up" keeps tiny wobbles from counting twice.
+   */
+  private trackFeet(moving: boolean, dt: number): void {
+    const rootY = this.root.getWorldPosition(tmpFoot).y;
+    for (const f of this.feet) {
+      const bone = this.bones.get(f.name);
+      if (!bone) continue;
+      const h = bone.getWorldPosition(tmpFoot).y - rootY;
+      f.low = Math.min(f.low + dt * 0.05, h);
+      if (!moving) {
+        f.down = true;
+        continue;
+      }
+      if (f.down && h > f.low + 0.12) f.down = false;
+      else if (!f.down && h < f.low + 0.04) {
+        f.down = true;
+        this.footfalls++;
+      }
+    }
+  }
+
   private play(name: string, fade = 0.2, once = false): THREE.AnimationAction | null {
     if (name === this.currentName) return this.current;
     const clip = this.body.clips.get(name);
@@ -458,6 +487,7 @@ export class HumanAvatar {
     }
     this.prevState = state;
     this.mixer.update(dt);
+    this.trackFeet(state === "WALKING" || state === "RUNNING", dt);
 
     // Seated: line the clip's hips up with where the procedural rig sits (0.55 up, 0.12 back).
     const sitting = state === "SITTING";
