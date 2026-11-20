@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { academyXpEvents, badges, learningTracks, lessonProgress, lessons, profiles, userBadges, userLearningStats, users, type DbExecutor } from "@entroworld/database";
-import { replay } from "@entroworld/puzzle-engine";
+import { describeBoard, replay } from "@entroworld/puzzle-engine";
+import type { TutorLessonContext } from "@entroworld/agent-protocol";
 import {
   LEADERBOARD_SIZE,
   levelForXp,
   levelProgress,
   nextStreak,
+  type AcademyAchievementsView,
   type AcademyProgressView,
   type BadgeCriteria,
   type BadgeView,
@@ -141,6 +143,23 @@ export class AcademyService {
     };
   }
 
+  /** A lesson described for the AI tutor, from trusted data only. */
+  async tutorContext(lessonId: string): Promise<TutorLessonContext> {
+    const { lesson } = await this.lessonRow(lessonId);
+    const p = lesson.puzzleDefinition;
+    return {
+      title: lesson.title,
+      concept: lesson.content.concept,
+      instructions: lesson.content.instructions,
+      hints: lesson.content.hints,
+      board: describeBoard(p),
+      allowedApi: p.allowedApi,
+      controls: p.controls,
+      maxBlocks: p.maxBlocks,
+      maxActions: p.maxActions,
+    };
+  }
+
   async progress(userId: string): Promise<AcademyProgressView> {
     const [[stats], rows] = await Promise.all([
       this.db.select().from(userLearningStats).where(eq(userLearningStats.userId, userId)),
@@ -163,6 +182,20 @@ export class AcademyService {
       iconUrl: badge.iconUrl,
       awardedAt: awardedAt.toISOString(),
     }));
+  }
+
+  /** Level, XP and badges for a profile page (the caller checks the profile is visible). */
+  async achievements(userId: string): Promise<AcademyAchievementsView> {
+    const [[stats], badgeList, [done]] = await Promise.all([
+      this.db.select().from(userLearningStats).where(eq(userLearningStats.userId, userId)),
+      this.badges(userId),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(lessonProgress)
+        .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.status, "completed"))),
+    ]);
+    const totalXp = stats?.totalXp ?? 0;
+    return { level: levelForXp(totalXp), totalXp, lessonsCompleted: done?.count ?? 0, badges: badgeList };
   }
 
   async saveCode(userId: string, lessonId: string, input: SaveCodeRequest): Promise<void> {

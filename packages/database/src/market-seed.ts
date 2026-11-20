@@ -67,6 +67,13 @@ const AGENTS: AgentSeed[] = [
         productType: "chat",
         freeQuota: 20,
       },
+      {
+        slug: "puzzle-tutor",
+        name: "Puzzle Lab Tutor",
+        description: "Byte visits the Coding Academy's Puzzle Lab with hints (not answers) for your robot puzzles.",
+        productType: "tool",
+        freeQuota: 20,
+      },
     ],
   },
 ];

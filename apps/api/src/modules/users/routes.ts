@@ -9,7 +9,8 @@ import {
   usernameParamSchema,
   uuidSchema,
 } from "@entroworld/validation";
-import { parse } from "../../lib/errors";
+import { forbidden, parse } from "../../lib/errors";
+import { AcademyService } from "../academy/service";
 import { requireAuth, viewer } from "../../plugins/auth";
 import { PostsService } from "../posts/service";
 import { UsersService } from "./service";
@@ -17,6 +18,7 @@ import { UsersService } from "./service";
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   const users = new UsersService(app.ctx);
   const posts = new PostsService(app.ctx);
+  const academy = new AcademyService(app.ctx);
   app.addHook("preHandler", requireAuth);
 
   app.patch("/me", async (request) => users.updateMe(viewer(request).userId, parse(updateMeSchema, request.body)));
@@ -47,6 +49,12 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return users.profile(viewer(request).userId, id);
   });
 
+  app.get("/:id/academy", async (request) => {
+    const { id } = parse(idParamSchema, request.params);
+    const profile = await users.profile(viewer(request).userId, id);
+    if (profile.restricted) throw forbidden("This profile is private", "private_profile");
+    return academy.achievements(id);
+  });
   app.get("/:id/friends", async (request) => users.friendsOf(viewer(request).userId, parse(idParamSchema, request.params).id));
 
   app.get("/:id/posts", async (request) => {

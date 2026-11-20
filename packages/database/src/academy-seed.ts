@@ -12,8 +12,9 @@ import { badges, learningTracks, lessons } from "./schema";
 
 /**
  * Coding Academy curriculum (SPEC-ADDENDUM-01 §3.2). Content lives in the database; this file is
- * only the seed. Each lesson carries a reference `solution` that tests replay to prove the puzzle
- * is solvable. Solutions are never written to the database or sent to clients.
+ * only the seed. Each lesson carries a reference `solution` (an action log) or a reference
+ * `program` (JavaScript, for lessons about loops with conditions where the log is long) that tests
+ * run to prove the puzzle is solvable. Neither is written to the database or sent to clients.
  */
 
 export interface LessonSeed {
@@ -22,7 +23,9 @@ export interface LessonSeed {
   xpReward: number;
   content: LessonContent;
   puzzle: PuzzleDefinition;
-  solution: RobotAction[];
+  solution?: RobotAction[];
+  /** Reference program in the code the blocks generate; its action count is the puzzle's par. */
+  program?: string;
 }
 
 export interface TrackSeed {
@@ -41,12 +44,14 @@ const PICK: RobotAction = { type: "pickUp" };
 const times = (n: number, body: RobotAction[]): RobotAction[] => Array.from({ length: n }, () => body).flat();
 
 const MOVE_AND_TURN = ["moveForward", "turnLeft", "turnRight"] as const;
+/** Sensors behind the condition blocks ("if path ahead is clear", "repeat until at the exit"). */
+const SENSORS = ["sensor", "isPathClear", "atExit"] as const;
 const EXIT = "academy-lab-exit-open";
 
 export const PROGRAMMING_BASICS: TrackSeed = {
   slug: "programming-basics",
   title: "Programming Basics",
-  description: "Program your robot companion with blocks: sequences first, then loops.",
+  description: "Program your robot companion: sequences, loops, conditions and functions, then crack the vault.",
   level: "beginner",
   orderIndex: 0,
   lessons: [
@@ -195,6 +200,134 @@ export const PROGRAMMING_BASICS: TrackSeed = {
       },
       solution: times(4, [move(1), R, move(1), L]),
     },
+    {
+      slug: "winding-path",
+      title: "Winding Path",
+      xpReward: 125,
+      content: {
+        concept: "Conditions",
+        intro: "Your robot has sensors! With an \"if\" block it can look before it moves and decide what to do: drive on when the way is clear, turn when it isn't.",
+        instructions: "Follow the winding path to the exit door using at most 6 blocks. Too many turns to write them all out: let the robot decide!",
+        hints: [
+          "Start with \"repeat until at the exit\": everything inside runs again and again until the robot stands on the door.",
+          "Inside, use \"if … else\": if the path ahead is clear, move forward 1. Otherwise the robot has to turn.",
+          "Which way? Put a second \"if … else\" in the else part: if the path to the left is clear, turn left, else turn right.",
+        ],
+        unlocks: [EXIT],
+      },
+      puzzle: {
+        width: 7,
+        height: 7,
+        tiles: ["...#...", "##.#.#.", "##...#.", "######.", "###....", "###.###", "###...."],
+        start: { x: 0, y: 0, dir: "E" },
+        goal: { reach: { x: 6, y: 6 }, collectAll: false },
+        allowedApi: [...MOVE_AND_TURN, ...SENSORS],
+        controls: ["if", "until"],
+        maxActions: 40,
+        maxBlocks: 6,
+        par: 30,
+      },
+      program: [
+        "while (!robot.atExit()) {",
+        '  if (robot.sensor("front") !== "wall") {',
+        "    robot.moveForward(1);",
+        "  } else {",
+        '    if (robot.sensor("left") !== "wall") {',
+        "      robot.turnLeft();",
+        "    } else {",
+        "      robot.turnRight();",
+        "    }",
+        "  }",
+        "}",
+      ].join("\n"),
+    },
+    {
+      slug: "battery-alcoves",
+      title: "Battery Alcoves",
+      xpReward: 125,
+      content: {
+        concept: "Functions",
+        intro: "A function is a recipe with a name. Build it once, then use it anywhere with a single block. That keeps programs short and easy to read.",
+        instructions: "Grab the battery from each of the three alcoves, then reach the exit door. You only have 16 blocks.",
+        hints: [
+          "Grabbing a battery from an alcove always takes the same moves. That's a perfect job for a function.",
+          "Drag in the \"define\" block, name it \"grab battery\" and put the moves inside. A new \"grab battery\" block then appears in the toolbox: snap it under \"when run\".",
+          "Inside the function: turn left, move 1, pick up, turn right, turn right, move 1, turn left. The main program: move 1, grab, move 1, grab, move 3, grab, move 2.",
+        ],
+        unlocks: [EXIT],
+      },
+      puzzle: {
+        width: 8,
+        height: 2,
+        tiles: ["#BB##B##", "........"],
+        start: { x: 0, y: 1, dir: "E" },
+        goal: { reach: { x: 7, y: 1 }, collectAll: true },
+        allowedApi: [...MOVE_AND_TURN, "pickUp"],
+        controls: ["function"],
+        maxActions: 40,
+        maxBlocks: 16,
+        par: 25,
+      },
+      program: [
+        "function grabBattery() {",
+        "  robot.turnLeft();",
+        "  robot.moveForward(1);",
+        "  robot.pickUp();",
+        "  robot.turnRight();",
+        "  robot.turnRight();",
+        "  robot.moveForward(1);",
+        "  robot.turnLeft();",
+        "}",
+        "robot.moveForward(1);",
+        "grabBattery();",
+        "robot.moveForward(1);",
+        "grabBattery();",
+        "robot.moveForward(3);",
+        "grabBattery();",
+        "robot.moveForward(2);",
+      ].join("\n"),
+    },
+    {
+      slug: "open-the-vault",
+      title: "Open the Vault",
+      xpReward: 200,
+      content: {
+        concept: "Final challenge",
+        intro: "The final challenge! The vault opens only for a robot carrying all four batteries. Combine everything you learned: loops, conditions and functions.",
+        instructions: "Explore the maze, collect all 4 batteries and reach the vault door at the top left. Use at most 9 blocks.",
+        hints: [
+          "Mazes have a classic trick: keep one hand on the wall. If the robot always prefers turning left, it walks into every side passage on its left and back out again.",
+          "Each round of \"repeat until at the exit\": if the left is clear, turn left and move 1; else if the path ahead is clear, move 1; else turn right.",
+          "Picking up where there is no battery does nothing, so you can add \"pick up battery\" at the end of every round.",
+        ],
+        unlocks: [EXIT],
+      },
+      puzzle: {
+        width: 8,
+        height: 8,
+        tiles: ["..######", "#.######", "B.######", "#.......", "#.#####.", "#B###B..", "###B###.", "........"],
+        start: { x: 0, y: 7, dir: "E" },
+        goal: { reach: { x: 0, y: 0 }, collectAll: true },
+        allowedApi: [...MOVE_AND_TURN, "pickUp", ...SENSORS],
+        controls: ["repeat", "if", "until", "function"],
+        maxActions: 120,
+        maxBlocks: 9,
+        par: 92,
+      },
+      program: [
+        "while (!robot.atExit()) {",
+        '  if (robot.sensor("left") !== "wall") {',
+        "    robot.turnLeft();",
+        "    robot.moveForward(1);",
+        '  } else if (robot.sensor("front") !== "wall") {',
+        "    robot.moveForward(1);",
+        "  } else {",
+        "    robot.turnRight();",
+        "  }",
+        "  robot.pickUp();",
+        "}",
+      ].join("\n"),
+    },
   ],
 };
 
@@ -207,6 +340,12 @@ export const ACADEMY_BADGES: { slug: string; name: string; description: string; 
     name: "Loop Learner",
     description: "Solved every loop puzzle in Programming Basics.",
     criteria: { type: "lessons_set", lessons: ["around-the-fountain", "staircase"] },
+  },
+  {
+    slug: "logic-builder",
+    name: "Logic Builder",
+    description: "Taught your robot to decide with conditions and to reuse moves with functions.",
+    criteria: { type: "lessons_set", lessons: ["winding-path", "battery-alcoves"] },
   },
   {
     slug: "basics-graduate",

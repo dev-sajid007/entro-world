@@ -33,6 +33,32 @@ export class AgentRegistry {
     return record;
   }
 
+  /** The agent of a shop (each shop has at most one), e.g. Byte of Code Corner. */
+  async byShop(shopSlug: string): Promise<AgentRecord | null> {
+    const key = `shop:${shopSlug}`;
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < TTL_MS) return hit.record;
+    const [row] = await this.db
+      .select({ id: aiAgents.id })
+      .from(aiAgents)
+      .innerJoin(marketShops, eq(marketShops.id, aiAgents.shopId))
+      .where(eq(marketShops.slug, shopSlug))
+      .limit(1);
+    const record = row ? await this.get(row.id) : null;
+    this.cache.set(key, { at: Date.now(), record });
+    return record;
+  }
+
+  /** Id of one of the agent's active products, by slug. */
+  async productId(agentId: string, slug: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ id: aiProducts.id })
+      .from(aiProducts)
+      .where(and(eq(aiProducts.agentId, agentId), eq(aiProducts.slug, slug), eq(aiProducts.isActive, true)))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   invalidate(agentId?: string): void {
     if (agentId) this.cache.delete(agentId);
     else this.cache.clear();

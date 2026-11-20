@@ -167,6 +167,12 @@ export class PuzzleSim {
     return this.sense("front") !== "wall";
   }
 
+  /** True while the robot stands on the exit door (false in puzzles without one). */
+  atExit(): boolean {
+    const reach = this.puzzle.goal.reach;
+    return reach !== null && this.robot.x === reach.x && this.robot.y === reach.y;
+  }
+
   /** The goal is checked when the program has finished, not mid-run. */
   goalReached(): boolean {
     const { reach, collectAll } = this.puzzle.goal;

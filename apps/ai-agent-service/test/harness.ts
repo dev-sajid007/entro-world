@@ -162,3 +162,18 @@ export async function send(
 }
 
 export const deltas = (events: AgentStreamEvent[]) => events.map((e) => (e.type === "delta" ? e.text : "")).join("");
+
+/** Asks the tutor for a hint and collects the whole SSE response. */
+export async function askTutor(h: Harness, body: unknown, options: { token?: string | null } = {}): Promise<StreamResult> {
+  const address = h.app.server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = options.token === undefined ? h.token : options.token;
+  if (token) headers[INTERNAL_TOKEN_HEADER] = token;
+  const res = await fetch(`http://127.0.0.1:${port}/internal/v1/tutor/hints`, { method: "POST", headers, body: JSON.stringify(body) });
+  const text = await res.text();
+  if (!res.headers.get("content-type")?.startsWith("text/event-stream")) {
+    return { status: res.status, events: [], json: JSON.parse(text), text };
+  }
+  return { status: res.status, events: new SseDecoder().push(text), json: null, text };
+}

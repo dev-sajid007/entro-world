@@ -6,7 +6,7 @@ import { z } from "zod";
  * the simulation and are never part of the action log.
  */
 export const ROBOT_ACTION_METHODS = ["moveForward", "turnLeft", "turnRight", "jump", "pickUp", "drop", "say"] as const;
-export const ROBOT_SENSOR_METHODS = ["isPathClear", "sensor"] as const;
+export const ROBOT_SENSOR_METHODS = ["isPathClear", "sensor", "atExit"] as const;
 export const ROBOT_METHODS = [...ROBOT_ACTION_METHODS, ...ROBOT_SENSOR_METHODS] as const;
 
 export type RobotActionMethod = (typeof ROBOT_ACTION_METHODS)[number];

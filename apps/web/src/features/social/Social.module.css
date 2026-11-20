@@ -393,3 +393,28 @@
   background: rgba(148, 163, 184, 0.16);
   text-decoration: none;
 }
+
+/* Coding Academy card on profiles */
+.academyHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.academyHead h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.academyBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.academyBadge {
+  font-size: 13px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.1);
+  border-radius: 999px;
+  padding: 3px 10px;
+}

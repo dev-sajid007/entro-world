@@ -20,8 +20,12 @@ export type TileChar = (typeof TILE_CHARS)[number];
 export const DIRECTIONS = ["N", "E", "S", "W"] as const;
 export type Direction = (typeof DIRECTIONS)[number];
 
-/** Editor control blocks a puzzle offers besides robot methods. */
-export const PUZZLE_CONTROLS = ["repeat"] as const;
+/**
+ * Editor control blocks a puzzle offers besides robot methods: `repeat` (count loop), `if`
+ * (if / if-else on a sensor), `until` ("repeat until at the exit") and `function` (define and call
+ * your own blocks). Conditions need the `sensor` method; `until` needs `atExit`.
+ */
+export const PUZZLE_CONTROLS = ["repeat", "if", "until", "function"] as const;
 export type PuzzleControl = (typeof PUZZLE_CONTROLS)[number];
 
 const cellSchema = z.object({ x: z.number().int().min(0), y: z.number().int().min(0) }).strict();

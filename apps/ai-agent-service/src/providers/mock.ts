@@ -13,7 +13,7 @@ export class MockProvider implements LlmProvider {
 
   async stream(request: ProviderRequest, onText: (text: string) => void): Promise<ProviderResult> {
     const last = request.messages.at(-1)?.content ?? "";
-    const name = /You are ([^,.\n]+)/.exec(request.system)?.[1] ?? "the shopkeeper";
+    const name = /Your name is ([^,.\n]+)/.exec(request.system)?.[1] ?? /You are ([^,.\n]+)/.exec(request.system)?.[1] ?? "the shopkeeper";
     const quoted = last.length > 120 ? `${last.slice(0, 117)}…` : last;
     const text =
       `Hi, ${name} here, running in offline demo mode, so I can't really think right now. ` +

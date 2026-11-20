@@ -1,4 +1,4 @@
-import { PuzzleSim, type RobotState, type SimEvent } from "@entroworld/puzzle-engine";
+import { PuzzleSim, type RobotState, type SimEvent } from "./simulation";
 import {
   MAX_ACTION_LOG,
   MAX_SAY_LENGTH,
@@ -54,8 +54,8 @@ export const SHADOWED_GLOBALS = [
 
 /**
  * Runs a learner's program against the deterministic puzzle simulation and records every robot
- * action. Infinite loops are not handled here: the caller runs this in a Web Worker and terminates
- * it after a time limit.
+ * action. Infinite loops are not handled here: the browser runs this in a Web Worker and terminates
+ * it after a time limit. (Tests also use it to check reference programs for the curriculum.)
  */
 export function execute(code: string, puzzle: PuzzleDefinition): ExecuteResult {
   const sim = new PuzzleSim(puzzle);
@@ -67,7 +67,7 @@ export function execute(code: string, puzzle: PuzzleDefinition): ExecuteResult {
     actions.push(action);
     if (!sim.apply(action)) throw new StopRun();
   };
-  const sensor = (method: "isPathClear" | "sensor") => {
+  const sensor = (method: "isPathClear" | "sensor" | "atExit") => {
     if (!sim.can(method)) throw new ProgramError(`robot.${method}() isn't available in this puzzle.`);
   };
 
@@ -94,6 +94,10 @@ export function execute(code: string, puzzle: PuzzleDefinition): ExecuteResult {
         throw new ProgramError('sensor() takes "front", "left" or "right".');
       }
       return sim.sense(direction as SensorDirection);
+    },
+    atExit() {
+      sensor("atExit");
+      return sim.atExit();
     },
   });
 

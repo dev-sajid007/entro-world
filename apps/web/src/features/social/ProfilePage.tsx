@@ -4,7 +4,7 @@ import { ZONES, type UserProfile } from "@entroworld/shared";
 import { Badge, Button, Card, Empty, ErrorText, Spinner, StatusDot, UserAvatar } from "../../components/ui";
 import { ApiError, errorMessage } from "../../lib/api";
 import { AppShell } from "./AppShell";
-import { useProfile, useSocialAction, useUserFriends, useUserPosts } from "./hooks";
+import { useProfile, useSocialAction, useUserAcademy, useUserFriends, useUserPosts } from "./hooks";
 import { PostList, ReportForm } from "./Posts";
 import styles from "./Social.module.css";
 
@@ -75,6 +75,8 @@ function Profile({ profile }: { profile: UserProfile }) {
         )}
       </Card>
 
+      {!profile.restricted && <AcademyCard userId={user.id} isSelf={rel.isSelf} />}
+
       {!profile.restricted && (
         <div className={styles.tabs} role="tablist">
           {(["posts", "friends"] as const).map((t) => (
@@ -104,6 +106,34 @@ function Profile({ profile }: { profile: UserProfile }) {
         </Card>
       )}
     </>
+  );
+}
+
+/** Coding Academy level and badges (SPEC-ADDENDUM-01 §3.3 "Badges shown on user profile"). */
+function AcademyCard({ userId, isSelf }: { userId: string; isSelf: boolean }) {
+  const academy = useUserAcademy(userId, true);
+  const a = academy.data;
+  if (!a || (a.lessonsCompleted === 0 && !isSelf)) return null;
+  return (
+    <Card>
+      <div className={styles.academyHead}>
+        <h2>🤖 Coding Academy</h2>
+        <span className={styles.muted}>
+          Level {a.level} · {a.totalXp} XP · {a.lessonsCompleted} puzzle{a.lessonsCompleted === 1 ? "" : "s"} solved
+        </span>
+      </div>
+      {a.badges.length > 0 ? (
+        <div className={styles.academyBadges}>
+          {a.badges.map((b) => (
+            <span key={b.slug} className={styles.academyBadge} title={b.description}>
+              🏅 {b.name}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className={styles.muted}>No badges yet. Solve puzzles in the Puzzle Lab to earn some!</p>
+      )}
+    </Card>
   );
 }
 

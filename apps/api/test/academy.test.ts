@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { ACADEMY_TRACKS } from "@entroworld/database";
+import { ACADEMY_TRACKS, type LessonSeed } from "@entroworld/database";
+import { execute } from "@entroworld/puzzle-engine";
 import type { LessonSummaryView, TrackView } from "@entroworld/robot-api";
 import { call, createHarness, register, type Harness, type TestUser } from "./harness";
 
@@ -15,7 +16,9 @@ beforeEach(async () => {
 });
 
 const SEED = ACADEMY_TRACKS[0]!;
-const solution = (slug: string) => SEED.lessons.find((l) => l.slug === slug)!.solution;
+/** A lesson's reference action log (lessons about conditions ship a program instead). */
+const seedSolution = (l: LessonSeed) => l.solution ?? execute(l.program!, l.puzzle).actions;
+const solution = (slug: string) => seedSolution(SEED.lessons.find((l) => l.slug === slug)!);
 
 async function lessons(u: TestUser): Promise<LessonSummaryView[]> {
   const res = await call(h, "GET", "/academy/tracks", { as: u });
@@ -99,9 +102,9 @@ describe("academy", () => {
       earned.push(...res.data.badgesAwarded);
       xp += res.data.xpAwarded;
     }
-    expect(earned.sort()).toEqual(["basics-graduate", "first-steps", "loop-learner"]);
+    expect(earned.sort()).toEqual(["basics-graduate", "first-steps", "logic-builder", "loop-learner"]);
     const progress = await call(h, "GET", "/academy/progress/me", { as: u });
-    expect(progress.data.stats).toMatchObject({ totalXp: xp, level: 3 });
+    expect(progress.data.stats).toMatchObject({ totalXp: xp, level: 4 });
   });
 
   it("rejects action logs over the puzzle's limit", async () => {

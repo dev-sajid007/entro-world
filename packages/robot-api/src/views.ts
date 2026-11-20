@@ -66,6 +66,14 @@ export interface BadgeView {
   awardedAt: string;
 }
 
+/** A user's Academy level and badges, as shown on their profile. */
+export interface AcademyAchievementsView {
+  level: number;
+  totalXp: number;
+  lessonsCompleted: number;
+  badges: BadgeView[];
+}
+
 /** How a badge is earned (`badges.criteria`). */
 export type BadgeCriteria =
   | { type: "lessons_completed"; count: number }

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Redis } from "ioredis";
 import { jwtVerify } from "jose";
 import { academyXpEvents, ACADEMY_TRACKS } from "@entroworld/database";
+import { execute } from "@entroworld/puzzle-engine";
 import { USER_CONTROL_CHANNEL, type UserControl } from "@entroworld/game-protocol";
 import { ACADEMY_TICKET_AUDIENCE, academyTicketClaimsSchema, type LeaderboardView, type LessonSummaryView, type TrackView } from "@entroworld/robot-api";
 import { weekStartUtc } from "../src/modules/academy/service";
@@ -38,7 +39,8 @@ async function solve(u: TestUser, count: number): Promise<number> {
   const list = await lessons(u);
   let xp = 0;
   for (const l of list.slice(0, count)) {
-    const actions = SEED.lessons.find((s) => s.slug === l.slug)!.solution;
+    const seed = SEED.lessons.find((s) => s.slug === l.slug)!;
+    const actions = seed.solution ?? execute(seed.program!, seed.puzzle).actions;
     const res = await call(h, "POST", `/academy/lessons/${l.id}/attempts`, { as: u, body: { actions, editorMode: "blocks" } });
     expect(res.data.success).toBe(true);
     xp += l.xpReward;

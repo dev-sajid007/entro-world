@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import * as Blockly from "blockly/core";
 import type { PuzzleDefinition } from "@entroworld/robot-api";
-import { START_BLOCK, countBlocks, registerRobotBlocks, toolboxFor, workspaceCode } from "./blocks";
+import { START_BLOCK, countBlocks, definedFunctions, registerRobotBlocks, toolboxFor, workspaceCode } from "./blocks";
 import styles from "../Academy.module.css";
 
 export interface BlockEditorHandle {
@@ -59,6 +59,8 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
   onChangeRef.current = onChange;
   /** True while applying a remote workspace, so it isn't reported as a local edit. */
   const applying = useRef(false);
+  /** Rebuilds the toolbox when the defined functions changed. */
+  const refreshToolbox = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     const el = host.current;
@@ -93,9 +95,24 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
     }
     ws.getBlocksByType(START_BLOCK, false).forEach((b) => b.setDeletable(false));
 
+    // Each function the learner defines gets its own call block in the toolbox.
+    let functionsKey = "[]";
+    const refresh = () => {
+      if (!puzzle.controls.includes("function")) return;
+      const functions = definedFunctions(ws);
+      const key = JSON.stringify(functions);
+      if (key === functionsKey) return;
+      functionsKey = key;
+      ws.updateToolbox(toolboxFor(puzzle, functions));
+    };
+    refreshToolbox.current = refresh;
+    refresh();
+
     ws.addChangeListener(Blockly.Events.disableOrphans);
     ws.addChangeListener((e) => {
-      if (e.isUiEvent || ws.isDragging() || applying.current) return;
+      if (e.isUiEvent || ws.isDragging()) return;
+      refresh();
+      if (applying.current) return;
       onChangeRef.current(countBlocks(ws));
     });
     onChangeRef.current(countBlocks(ws));
@@ -104,6 +121,7 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
     resize.observe(el);
     return () => {
       resize.disconnect();
+      refreshToolbox.current = () => undefined;
       workspace.current = null;
       ws.dispose();
     };
@@ -140,6 +158,7 @@ export const BlockEditor = forwardRef<BlockEditorHandle, Props>(function BlockEd
           Blockly.Events.enable();
           applying.current = false;
         }
+        refreshToolbox.current();
         // Greyed-out loose blocks keep that state: it is part of the serialized workspace.
         onChangeRef.current(countBlocks(ws));
       },

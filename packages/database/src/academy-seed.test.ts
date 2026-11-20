@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { replay } from "@entroworld/puzzle-engine";
+import { execute, replay } from "@entroworld/puzzle-engine";
 import { lessonContentSchema, puzzleDefinitionSchema } from "@entroworld/robot-api";
 import { ACADEMY_BADGES, ACADEMY_TRACKS } from "./academy-seed";
 
 describe("academy curriculum", () => {
   const all = ACADEMY_TRACKS.flatMap((t) => t.lessons);
 
-  it("has five valid beginner puzzles with unique slugs", () => {
-    expect(all).toHaveLength(5);
+  it("has eight valid beginner puzzles with unique slugs", () => {
+    expect(all).toHaveLength(8);
     expect(new Set(all.map((l) => l.slug)).size).toBe(all.length);
     for (const l of all) {
       expect(puzzleDefinitionSchema.safeParse(l.puzzle).error).toBeUndefined();
@@ -16,11 +16,27 @@ describe("academy curriculum", () => {
   });
 
   it.each(all.map((l) => [l.slug, l] as const))("%s is solvable within its limits and par", (_slug, lesson) => {
-    const result = replay(lesson.puzzle, lesson.solution);
+    expect(Boolean(lesson.solution) !== Boolean(lesson.program)).toBe(true);
+    let solution = lesson.solution ?? [];
+    if (lesson.program) {
+      // The reference program must run in the same sandbox code the browser uses.
+      const run = execute(lesson.program, lesson.puzzle);
+      expect(run.error).toBeUndefined();
+      expect(run.success).toBe(true);
+      solution = run.actions;
+    }
+    const result = replay(lesson.puzzle, solution);
     expect(result).toMatchObject({ success: true });
-    expect(lesson.solution.length).toBeLessThanOrEqual(lesson.puzzle.maxActions);
-    expect(lesson.solution.length).toBe(lesson.puzzle.par);
-    for (const a of lesson.solution) expect(lesson.puzzle.allowedApi).toContain(a.type);
+    expect(solution.length).toBeLessThanOrEqual(lesson.puzzle.maxActions);
+    expect(solution.length).toBe(lesson.puzzle.par);
+    for (const a of solution) expect(lesson.puzzle.allowedApi).toContain(a.type);
+  });
+
+  it("needs conditions where the lesson teaches them", () => {
+    // Writing the winding path out move by move takes far more blocks than the lesson allows.
+    const winding = all.find((l) => l.slug === "winding-path")!;
+    const straightLine = [2, 2, 2, 2, 2, 4, 3, 2, 3].length * 2 - 1;
+    expect(straightLine).toBeGreaterThan(winding.puzzle.maxBlocks!);
   });
 
   it("is not solved by doing nothing", () => {

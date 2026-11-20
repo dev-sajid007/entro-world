@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { idParamSchema } from "@entroworld/validation";
+import { tutorHintRequestSchema } from "@entroworld/agent-protocol";
 import { createSessionRequestSchema, leaderboardQuerySchema, lessonAttemptRequestSchema, saveCodeRequestSchema } from "@entroworld/robot-api";
-import { parse } from "../../lib/errors";
+import { AppError, parse } from "../../lib/errors";
+import { relayAiStream } from "../../lib/sse-relay";
 import { requireAuth, viewer } from "../../plugins/auth";
 import { AcademyService } from "./service";
 import { AcademySessionService } from "./sessions";
@@ -28,6 +30,32 @@ export async function academyRoutes(app: FastifyInstance): Promise<void> {
   app.put("/lessons/:id/code", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
     await academy.saveCode(viewer(request).userId, parse(idParamSchema, request.params).id, parse(saveCodeRequestSchema, request.body));
     return reply.status(204).send();
+  });
+
+  /**
+   * AI tutor hint for a lesson (SPEC-ADDENDUM-01 §3.3), streamed as Server-Sent Events. The puzzle
+   * is described from the database; the learner's code is only included when they shared it.
+   */
+  app.post("/lessons/:id/tutor", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const userId = viewer(request).userId;
+    const { id } = parse(idParamSchema, request.params);
+    const body = parse(tutorHintRequestSchema, request.body);
+    const lesson = await academy.tutorContext(id);
+    const tutorRequest = {
+      editorMode: body.editorMode,
+      previousHints: body.previousHints,
+      ...(body.question ? { question: body.question } : {}),
+      ...(body.code !== undefined ? { code: body.code } : {}),
+      // Undefined fields (an empty error detail) are dropped when the request is serialized.
+      ...(body.lastRun ? { lastRun: body.lastRun } : {}),
+    };
+    return relayAiStream(
+      request,
+      reply,
+      (signal) => app.ctx.ai.tutorHint({ userId, lesson, request: tutorRequest }, signal),
+      () => null,
+      () => new AppError(503, "ai_unavailable", "The tutor is unavailable right now. The lesson hints can still help!"),
+    );
   });
 
   app.get("/leaderboard", async (request) => academy.leaderboard(viewer(request).userId, parse(leaderboardQuerySchema, request.query).scope));

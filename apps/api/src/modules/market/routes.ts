@@ -1,10 +1,9 @@
-import { Readable } from "node:stream";
-import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { agentMessageRequestSchema } from "@entroworld/agent-protocol";
 import { idParamSchema, pageQuerySchema, reportSchema } from "@entroworld/validation";
 import { AppError, conflict, notFound, parse } from "../../lib/errors";
+import { relayAiStream } from "../../lib/sse-relay";
 import { requireAuth, viewer } from "../../plugins/auth";
 import { MarketService } from "./service";
 
@@ -49,29 +48,17 @@ export async function marketRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(agentMessageRequestSchema, request.body);
     await market.requireConversation(userId, id);
 
-    const controller = new AbortController();
-    let upstream: Response;
-    try {
-      upstream = await app.ctx.ai.sendMessage(id, { userId, ...body }, controller.signal);
-    } catch (err) {
-      request.log.warn({ err }, "AI agent service unreachable");
-      throw aiUnavailable();
-    }
-    if (!upstream.headers.get("content-type")?.startsWith("text/event-stream") || !upstream.body) {
-      const data = (await upstream.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
-      if (upstream.status === 404) throw notFound("Conversation");
-      if (upstream.status === 409) throw conflict(data?.error?.message ?? "Still answering your last message.", data?.error?.code ?? "conversation_busy");
-      request.log.error({ status: upstream.status, code: data?.error?.code }, "AI agent service rejected a request");
-      throw aiUnavailable();
-    }
-    // The visitor leaving stops the answer (and the model) upstream.
-    reply.raw.on("close", () => {
-      if (!reply.raw.writableFinished) controller.abort();
-    });
-    return reply
-      .header("content-type", "text/event-stream; charset=utf-8")
-      .header("x-accel-buffering", "no")
-      .send(Readable.fromWeb(upstream.body as unknown as NodeReadableStream<Uint8Array>));
+    return relayAiStream(
+      request,
+      reply,
+      (signal) => app.ctx.ai.sendMessage(id, { userId, ...body }, signal),
+      (e) => {
+        if (e.status === 404) return notFound("Conversation");
+        if (e.status === 409) return conflict(e.message ?? "Still answering your last message.", e.code ?? "conversation_busy");
+        return null;
+      },
+      aiUnavailable,
+    );
   });
 
   app.get("/usage/me", async (request) => {

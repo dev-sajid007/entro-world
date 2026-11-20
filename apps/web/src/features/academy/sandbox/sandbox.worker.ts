@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import type { PuzzleDefinition } from "@entroworld/robot-api";
-import { SHADOWED_GLOBALS, execute } from "./execute";
+import { SHADOWED_GLOBALS, execute } from "@entroworld/puzzle-engine";
 
 /**
  * The code sandbox (SPEC-ADDENDUM-01 §4.2). One worker runs one program and is then thrown away;

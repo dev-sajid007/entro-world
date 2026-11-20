@@ -1,9 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { Redis } from "ioredis";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { INTERNAL_TOKEN_HEADER, encodeSse, internalAgentMessageSchema, type AgentStreamEvent } from "@entroworld/agent-protocol";
+import { INTERNAL_TOKEN_HEADER, encodeSse, internalAgentMessageSchema, internalTutorRequestSchema, type AgentStreamEvent } from "@entroworld/agent-protocol";
 import { internalServiceToken, type AiEnv } from "@entroworld/config";
 import type { Database } from "@entroworld/database";
 import { AgentRegistry } from "./agents/registry";
@@ -11,7 +11,9 @@ import { Responder } from "./conversations/responder";
 import { ConversationStore } from "./conversations/store";
 import { NpcPublisher } from "./npc/publisher";
 import type { LlmProvider } from "./providers/types";
+import { Tutor } from "./tutor/tutor";
 import { QuotaService } from "./usage/quota";
+import type { EventSink } from "./conversations/responder";
 
 export interface AiAppDeps {
   env: AiEnv;
@@ -60,6 +62,50 @@ export async function buildAiApp(deps: AiAppDeps, options: AiAppOptions = {}): P
     },
   });
 
+  const tutor = new Tutor({
+    registry,
+    provider,
+    quota,
+    moderationEnabled: env.AI_MODERATION_ENABLED,
+    canarySecret: token.toString(),
+    defaults: { model: env.AI_DEFAULT_MODEL, effort: env.AI_DEFAULT_EFFORT },
+    log: {
+      info: (obj, msg) => app.log.info(obj, msg),
+      warn: (obj, msg) => app.log.warn(obj, msg),
+      error: (obj, msg) => app.log.error(obj, msg),
+    },
+  });
+
+  /** Streams events from `run` to the client as Server-Sent Events, stopping it if the client leaves. */
+  const streamSse = async (request: FastifyRequest, reply: FastifyReply, run: (sink: EventSink, signal: AbortSignal) => Promise<void>) => {
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    res.flushHeaders();
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) controller.abort();
+    });
+    const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), keepAliveMs);
+    const sink = (event: AgentStreamEvent) => {
+      if (!res.destroyed) res.write(encodeSse(event));
+    };
+    try {
+      await run(sink, controller.signal);
+    } catch (err) {
+      request.log.error({ err }, "agent turn failed");
+      sink({ type: "error", code: "unavailable", message: "Something went wrong. Please try again." });
+    } finally {
+      clearInterval(keepAlive);
+      res.end();
+    }
+  };
+
   const authorized = (request: FastifyRequest): boolean => {
     const presented = request.headers[INTERNAL_TOKEN_HEADER];
     if (typeof presented !== "string") return false;
@@ -103,32 +149,16 @@ export async function buildAiApp(deps: AiAppDeps, options: AiAppOptions = {}): P
         const prepared = await responder.prepare({ conversationId: params.data.id, ...body.data });
         if (!prepared.ok) return reply.status(prepared.status).send(fail(prepared.status, prepared.code, prepared.message).body);
 
-        reply.hijack();
-        const res = reply.raw;
-        res.writeHead(200, {
-          "content-type": "text/event-stream; charset=utf-8",
-          "cache-control": "no-cache, no-transform",
-          connection: "keep-alive",
-          "x-accel-buffering": "no",
-        });
-        res.flushHeaders();
-        const controller = new AbortController();
-        res.on("close", () => {
-          if (!res.writableFinished) controller.abort();
-        });
-        const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), keepAliveMs);
-        const sink = (event: AgentStreamEvent) => {
-          if (!res.destroyed) res.write(encodeSse(event));
-        };
-        try {
-          await prepared.turn.run(sink, controller.signal);
-        } catch (err) {
-          request.log.error({ err }, "agent turn failed");
-          sink({ type: "error", code: "unavailable", message: "Something went wrong. Please try again." });
-        } finally {
-          clearInterval(keepAlive);
-          res.end();
-        }
+        await streamSse(request, reply, (sink, signal) => prepared.turn.run(sink, signal));
+      });
+
+      /** Streams one Academy tutor hint as Server-Sent Events. */
+      internal.post("/tutor/hints", async (request, reply) => {
+        const body = internalTutorRequestSchema.safeParse(request.body);
+        if (!body.success) return reply.status(400).send(fail(400, "validation_error", "Invalid tutor request").body);
+        const prepared = await tutor.prepare(body.data);
+        if (!prepared.ok) return reply.status(prepared.status).send(fail(prepared.status, prepared.code, prepared.message).body);
+        await streamSse(request, reply, prepared.run);
       });
     },
     { prefix: "/internal/v1" },

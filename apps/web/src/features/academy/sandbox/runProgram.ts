@@ -1,5 +1,5 @@
 import type { PuzzleDefinition } from "@entroworld/robot-api";
-import type { ExecuteResult } from "./execute";
+import type { ExecuteResult } from "@entroworld/puzzle-engine";
 
 /** How long a program may run before it is stopped. Puzzle programs finish in milliseconds. */
 export const RUN_TIME_LIMIT_MS = 2000;

@@ -1,6 +1,9 @@
 import * as Blockly from "blockly/core";
+// Registers Blockly's built-in blocks; the Academy uses its function (procedure) blocks.
+import "blockly/blocks";
 import * as En from "blockly/msg/en";
 import { javascriptGenerator } from "blockly/javascript";
+import { SHADOWED_GLOBALS } from "@entroworld/puzzle-engine";
 import { MAX_SAY_LENGTH, MAX_STEPS_PER_MOVE, type PuzzleDefinition } from "@entroworld/robot-api";
 
 /**
@@ -9,10 +12,27 @@ import { MAX_SAY_LENGTH, MAX_STEPS_PER_MOVE, type PuzzleDefinition } from "@entr
  */
 
 export const START_BLOCK = "robot_start";
+export const FUNCTION_DEF_BLOCK = "procedures_defnoreturn";
+const FUNCTION_CALL_BLOCK = "procedures_callnoreturn";
 const MAX_REPEAT = 20;
 
 const ROBOT_COLOUR = "#0284c7";
 const LOOP_COLOUR = "#7c3aed";
+const LOGIC_COLOUR = "#d97706";
+
+/** What the condition blocks can test, as [label, value] dropdown options. */
+const CONDITIONS: [string, string][] = [
+  ["path ahead is clear", "FRONT_CLEAR"],
+  ["path to the left is clear", "LEFT_CLEAR"],
+  ["path to the right is clear", "RIGHT_CLEAR"],
+  ["battery ahead", "BATTERY_AHEAD"],
+];
+const CONDITION_CODE: Record<string, string> = {
+  FRONT_CLEAR: 'robot.sensor("front") !== "wall"',
+  LEFT_CLEAR: 'robot.sensor("left") !== "wall"',
+  RIGHT_CLEAR: 'robot.sensor("right") !== "wall"',
+  BATTERY_AHEAD: 'robot.sensor("front") === "item"',
+};
 
 let registered = false;
 
@@ -21,6 +41,14 @@ export function registerRobotBlocks(): void {
   if (registered) return;
   registered = true;
   Blockly.setLocale(En as unknown as Record<string, string>);
+  // Kid-friendly wording for the built-in function blocks, and no "describe this function" note.
+  Blockly.Msg.PROCEDURES_DEFNORETURN_TITLE = "define";
+  Blockly.Msg.PROCEDURES_DEFNORETURN_PROCEDURE = "my moves";
+  Blockly.Msg.PROCEDURES_DEFNORETURN_COMMENT = "";
+  Blockly.Msg.PROCEDURES_DEFNORETURN_TOOLTIP = "Build your own block: name it, then put moves inside.";
+  Blockly.Msg.PROCEDURES_CALLNORETURN_TOOLTIP = "Run the moves of your function.";
+  // Function names must not shadow the robot or the sandbox's hidden globals.
+  javascriptGenerator.addReservedWords(["robot", ...SHADOWED_GLOBALS].join(","));
 
   Blockly.common.defineBlocksWithJsonArray([
     {
@@ -81,6 +109,40 @@ export function registerRobotBlocks(): void {
       colour: LOOP_COLOUR,
       tooltip: "Run the blocks inside again and again.",
     },
+    {
+      type: "robot_until",
+      message0: "repeat until at the exit",
+      message1: "%1",
+      args1: [{ type: "input_statement", name: "DO" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: LOOP_COLOUR,
+      tooltip: "Run the blocks inside again and again, until the robot stands on the exit door.",
+    },
+    {
+      type: "robot_if",
+      message0: "if %1",
+      args0: [{ type: "field_dropdown", name: "COND", options: CONDITIONS }],
+      message1: "%1",
+      args1: [{ type: "input_statement", name: "DO" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: LOGIC_COLOUR,
+      tooltip: "Run the blocks inside only when the robot's sensor says so.",
+    },
+    {
+      type: "robot_if_else",
+      message0: "if %1",
+      args0: [{ type: "field_dropdown", name: "COND", options: CONDITIONS }],
+      message1: "%1",
+      args1: [{ type: "input_statement", name: "DO" }],
+      message2: "else %1",
+      args2: [{ type: "input_statement", name: "ELSE" }],
+      previousStatement: null,
+      nextStatement: null,
+      colour: LOGIC_COLOUR,
+      tooltip: "Run the first blocks when the sensor says so, otherwise the blocks under \"else\".",
+    },
   ]);
 
   const g = javascriptGenerator;
@@ -96,6 +158,20 @@ export function registerRobotBlocks(): void {
     const i = gen.nameDB_!.getDistinctName("i", Blockly.Names.NameType.VARIABLE);
     return `for (let ${i} = 0; ${i} < ${times}; ${i}++) {\n${gen.statementToCode(b, "DO")}}\n`;
   };
+  g.forBlock.robot_until = (b, gen) => `while (!robot.atExit()) {\n${gen.statementToCode(b, "DO")}}\n`;
+  g.forBlock.robot_if = (b, gen) => `if (${conditionCode(b)}) {\n${gen.statementToCode(b, "DO")}}\n`;
+  g.forBlock.robot_if_else = (b, gen) => {
+    // Nested "if … else" in the else branch reads as a plain "else if" chain.
+    const only = b.getInputTargetBlock("ELSE");
+    if (only && !only.getNextBlock() && only.type === "robot_if_else" && only.isEnabled()) {
+      return `if (${conditionCode(b)}) {\n${gen.statementToCode(b, "DO")}} else ${gen.blockToCode(only) as string}`;
+    }
+    return `if (${conditionCode(b)}) {\n${gen.statementToCode(b, "DO")}} else {\n${gen.statementToCode(b, "ELSE")}}\n`;
+  };
+}
+
+function conditionCode(b: Blockly.Block): string {
+  return CONDITION_CODE[String(b.getFieldValue("COND"))] ?? "false";
 }
 
 function clampInt(value: unknown, min: number, max: number): number {
@@ -103,8 +179,22 @@ function clampInt(value: unknown, min: number, max: number): number {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
 }
 
-/** The blocks a puzzle offers, in toolbox order. */
-export function toolboxFor(puzzle: PuzzleDefinition): Blockly.utils.toolbox.ToolboxInfo {
+/** A function defined in the workspace, as its call block needs it. */
+export interface FunctionSignature {
+  name: string;
+  params: string[];
+}
+
+/** Functions defined in the workspace, in creation order. */
+export function definedFunctions(ws: Blockly.Workspace): FunctionSignature[] {
+  return ws.getBlocksByType(FUNCTION_DEF_BLOCK, false).map((b) => {
+    const [name, params] = (b as unknown as { getProcedureDef(): [string, string[], boolean] }).getProcedureDef();
+    return { name, params };
+  });
+}
+
+/** The blocks a puzzle offers, in toolbox order, plus a call block for each defined function. */
+export function toolboxFor(puzzle: PuzzleDefinition, functions: readonly FunctionSignature[] = []): Blockly.utils.toolbox.ToolboxInfo {
   const api = new Set(puzzle.allowedApi);
   const kinds: string[] = [];
   if (api.has("moveForward")) kinds.push("robot_move");
@@ -114,7 +204,14 @@ export function toolboxFor(puzzle: PuzzleDefinition): Blockly.utils.toolbox.Tool
   if (api.has("drop")) kinds.push("robot_drop");
   if (api.has("say")) kinds.push("robot_say");
   if (puzzle.controls.includes("repeat")) kinds.push("robot_repeat");
-  return { kind: "flyoutToolbox", contents: kinds.map((type) => ({ kind: "block", type })) };
+  if (puzzle.controls.includes("until")) kinds.push("robot_until");
+  if (puzzle.controls.includes("if")) kinds.push("robot_if", "robot_if_else");
+  const contents: Blockly.utils.toolbox.ToolboxItemInfo[] = kinds.map((type) => ({ kind: "block", type }));
+  if (puzzle.controls.includes("function")) {
+    contents.push({ kind: "block", type: FUNCTION_DEF_BLOCK });
+    for (const f of functions) contents.push({ kind: "block", type: FUNCTION_CALL_BLOCK, extraState: { name: f.name, params: f.params } });
+  }
+  return { kind: "flyoutToolbox", contents };
 }
 
 /** The program as JavaScript: only blocks attached under the start block run. */

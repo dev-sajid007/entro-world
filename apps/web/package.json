@@ -27,6 +27,7 @@
     "@tanstack/react-query": "^5.107.1",
     "blockly": "^13.4.0",
     "livekit-client": "^2.24.1",
+    "monaco-editor": "0.57.0",
     "postprocessing": "6.39.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { replay } from "@entroworld/puzzle-engine";
 import type { PuzzleDefinition } from "@entroworld/robot-api";
 import { execute } from "./execute";
+import { replay } from "./simulation";
 
 const corridor: PuzzleDefinition = {
   width: 5,
@@ -51,6 +51,14 @@ describe("sandbox execute", () => {
     expect(execute("robot.sensor('front');", corridor).error).toMatch(/isn't available/);
     expect(execute("robot.fly();", corridor).error).toMatch(/TypeError/);
     expect(execute("robot.moveForward(", corridor).error).toMatch(/SyntaxError/);
+  });
+
+  it("reports the exit sensor only when the puzzle offers it", () => {
+    expect(execute("robot.atExit();", corridor).error).toMatch(/isn't available/);
+    const withExit = { ...corridor, allowedApi: [...corridor.allowedApi, "atExit" as const] };
+    const r = execute("robot.moveForward(1); robot.pickUp(); while (!robot.atExit()) robot.moveForward(1);", withExit);
+    expect(r.success).toBe(true);
+    expect(r.actions).toHaveLength(5);
   });
 
   it("hides network and messaging globals from user code", () => {

@@ -1,3 +1,4 @@
+import type { AcademyAchievementsView } from "@entroworld/robot-api";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import type {
   AvatarConfig,
@@ -136,6 +137,13 @@ export const useProfile = (handle: string) => useQuery({ queryKey: keys.profile(
 export const useFriends = () => useQuery({ queryKey: keys.friends, queryFn: () => api.get<FriendView[]>("/friends"), refetchInterval: 30_000 });
 export const useUserFriends = (userId: string | undefined, enabled: boolean) =>
   useQuery({ queryKey: ["friends", "of", userId], enabled: enabled && !!userId, queryFn: () => api.get<FriendView[]>(`/users/${userId}/friends`) });
+export const useUserAcademy = (userId: string | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ["academy", "achievements", userId],
+    enabled: enabled && !!userId,
+    queryFn: () => api.get<AcademyAchievementsView>(`/users/${userId}/academy`),
+    staleTime: 60_000,
+  });
 export const useFriendRequests = () =>
   useQuery({ queryKey: keys.requests, queryFn: () => api.get<{ incoming: FriendRequestView[]; outgoing: FriendRequestView[] }>("/friends/requests") });
 

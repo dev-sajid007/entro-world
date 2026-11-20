@@ -46,7 +46,10 @@ describe("shops", () => {
     expect(res.body).not.toMatch(/systemPrompt|system_prompt|modelConfig/);
 
     const detail = await call(h, "GET", "/market/shops/code-corner", { as: me });
-    expect(detail.data.products).toEqual([expect.objectContaining({ name: "Code Help Chat", productType: "chat", freeQuota: 20 })]);
+    expect(detail.data.products).toEqual([
+      expect.objectContaining({ name: "Code Help Chat", productType: "chat", freeQuota: 20 }),
+      expect.objectContaining({ name: "Puzzle Lab Tutor", productType: "tool", freeQuota: 20 }),
+    ]);
     const closed = await call(h, "GET", "/market/shops/book-cafe", { as: me });
     expect(closed.data).toMatchObject({ status: "draft", agent: null, products: [] });
     expect((await call(h, "GET", "/market/shops/nope", { as: me })).statusCode).toBe(404);
